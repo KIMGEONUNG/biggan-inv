@@ -59,14 +59,10 @@ def parse_args():
     parser.add_argument('--class_index', default=15)
     parser.add_argument('--num_layer', default=2)
 
-    # parser.add_argument('--num_iter', default=40000)
-    # parser.add_argument('--interval_save_loss', default=4)
-    # parser.add_argument('--interval_save_train', default=20)
-    # parser.add_argument('--interval_save_test', default=200)
-    parser.add_argument('--num_iter', default=2)
-    parser.add_argument('--interval_save_loss', default=1)
-    parser.add_argument('--interval_save_train', default=1)
-    parser.add_argument('--interval_save_test', default=1)
+    parser.add_argument('--num_iter', default=40000)
+    parser.add_argument('--interval_save_loss', default=4)
+    parser.add_argument('--interval_save_train', default=20)
+    parser.add_argument('--interval_save_test', default=200)
 
     # Discriminator Options
     parser.add_argument('--z_std', default=0.8)
@@ -86,13 +82,16 @@ def parse_args():
     parser.add_argument('--use_pretrained_d', default=False)
 
     # Loss
-    parser.add_argument('--loss_mse', action='store_true', default=True)
+    parser.add_argument('--loss_mse_z', action='store_true', default=True)
+    parser.add_argument('--loss_mse_f', action='store_true', default=True)
+    parser.add_argument('--loss_recon', action='store_true', default=True)
     parser.add_argument('--loss_lpips', action='store_true', default=True)
-    parser.add_argument('--loss_adv', action='store_true', default=True)
 
     # Loss coef
     parser.add_argument('--coef_mse_z', type=float, default=1.0)
     parser.add_argument('--coef_mse_f', type=float, default=1.0)
+    parser.add_argument('--coef_recon', type=float, default=1.0)
+    parser.add_argument('--coef_lpips', type=float, default=0.1)
 
     # Others
     parser.add_argument('--seed', type=int, default=42)
@@ -236,11 +235,25 @@ def train(G, D, config, args, dev):
         x_gray = transforms.Grayscale()(x)
         f_hat, z_hat = encoder(x_gray)
 
-        loss_mse_z = nn.MSELoss()(z, z_hat) 
-        loss_mse_f = nn.MSELoss()(f, f_hat)
-        loss = loss_mse_f * args.coef_mse_f + loss_mse_z * args.coef_mse_z
-
+        # Loss
         optimizer.zero_grad()
+        loss = 0
+        if args.loss_mse_z:
+            loss_mse_z = nn.MSELoss()(z, z_hat) 
+            loss += loss_mse_z * args.coef_mse_z
+        if args.loss_mse_f:
+            loss_mse_f = nn.MSELoss()(f, f_hat)
+            loss += loss_mse_f * args.coef_mse_f
+        if args.loss_recon:
+            recon = G.forward_from(z_hat, G.shared(c), 
+                    args.num_layer, f_hat)
+            recon = (recon + 1) * 0.5
+            loss_recon = nn.MSELoss()(x, recon)
+            loss += loss_recon * args.coef_recon
+            if args.loss_lpips:
+                loss_lpips = vgg_per.perceptual_loss(x, recon)
+                loss_lpips +=  loss_lpips * args.coef_lpips
+
         loss.backward()
         optimizer.step()
 

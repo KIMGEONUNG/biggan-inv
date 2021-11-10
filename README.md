@@ -17,12 +17,15 @@ adversarial training. I expect this scheme would make the training more stable.
 adversarial loss.
 
 #### Results
-- Not yet 
+- Ongoing
+
+---
+### Use Self supervised encoder training 
+- 
 
 ---
 ### Use Pretrained Discriminator (V5)
 - 
-
 
 ---
 
@@ -33,14 +36,6 @@ is two when generator steps one. So, It would worth using original setting
 #### Results
 - Not yet 
 
----
-
-### Very Small Learning Rate
-- From now on, the training curve had been really flunctuated. 
-I thought that if I use smaller learning rate, it would be more stable. 
-
-#### Results
-- Not yet 
 ---
 
 ## Trivial Info.
