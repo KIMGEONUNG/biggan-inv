@@ -44,7 +44,7 @@ def parse_args():
     parser.add_argument('--task_name', default='encoder_f_16')
 
     # Mode
-    parser.add_argument('--mode', default='sampling', 
+    parser.add_argument('--mode', default='wip', 
             choices=['sampling', 'critic', 'wip', 'train'])
 
     # IO
@@ -180,8 +180,14 @@ def critic(G, D, config, args, dev):
     plt.show()
 
 
+def make_inplace_false(m):
+    if 'inplace' in m.__dict__:
+        m.inplace = False 
+
+
 def wip(G, D, config, args, dev):
-    pass
+    G.apply(make_inplace_false)
+    # print(G)
 
 
 def sampling(G, D, config, args, dev): 
