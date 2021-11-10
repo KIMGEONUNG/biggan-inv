@@ -1,5 +1,5 @@
 import models
-from encoders import EncoderF_16
+from encoders import EncoderFZ_16
 
 from torch.utils.tensorboard import SummaryWriter
 import torch
@@ -41,13 +41,9 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='encoder_f_16_v4')
+    parser.add_argument('--task_name', default='encoder_fz_self_v1')
     parser.add_argument('--detail', 
-        default='small learning rate for adversarial training')
-
-    # Mode
-    parser.add_argument('--mode', default='train', 
-            choices=['sampling', 'critic', 'wip', 'train'])
+        default='new idea for encoder training')
 
     # IO
     parser.add_argument('--path_config', default='config.pickle')
@@ -62,22 +58,23 @@ def parse_args():
     parser.add_argument('--path_dataset_encoder_val', default='./dataset_encoder_val/')
     parser.add_argument('--class_index', default=15)
     parser.add_argument('--num_layer', default=2)
-    parser.add_argument('--num_epoch', default=400)
-    parser.add_argument('--interval_save_loss', default=4)
-    parser.add_argument('--interval_save_train', default=20)
-    parser.add_argument('--interval_save_test', default=200)
+
+    # parser.add_argument('--num_iter', default=40000)
+    # parser.add_argument('--interval_save_loss', default=4)
+    # parser.add_argument('--interval_save_train', default=20)
+    # parser.add_argument('--interval_save_test', default=200)
+    parser.add_argument('--num_iter', default=2)
+    parser.add_argument('--interval_save_loss', default=1)
+    parser.add_argument('--interval_save_train', default=1)
+    parser.add_argument('--interval_save_test', default=1)
 
     # Discriminator Options
-    parser.add_argument('--num_dis', default=1)
-    parser.add_argument('--use_sampling_reality', default=True)
+    parser.add_argument('--z_std', default=0.8)
 
     # Optimizer
     parser.add_argument("--lr", type=float, default=0.0001)
     parser.add_argument("--b1", type=float, default=0.0)
     parser.add_argument("--b2", type=float, default=0.999)
-    parser.add_argument("--lr_d", type=float, default=0.00005)
-    parser.add_argument("--b1_d", type=float, default=0.0)
-    parser.add_argument("--b2_d", type=float, default=0.999)
 
     # Verbose
     parser.add_argument('--print_config', default=False)
@@ -94,15 +91,14 @@ def parse_args():
     parser.add_argument('--loss_adv', action='store_true', default=True)
 
     # Loss coef
-    parser.add_argument('--coef_mse', type=float, default=1.0)
-    parser.add_argument('--coef_lpips', type=float, default=0.1)
-    parser.add_argument('--coef_adv', type=float, default=0.05)
+    parser.add_argument('--coef_mse_z', type=float, default=1.0)
+    parser.add_argument('--coef_mse_f', type=float, default=1.0)
 
     # Others
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--size_batch', default=8)
+    parser.add_argument('--size_batch', default=4)
     parser.add_argument('--w_class', default=False)
-    parser.add_argument('--device', default='cuda:0')
+    parser.add_argument('--device', default='cuda:1')
 
     return parser.parse_args()
 
@@ -196,20 +192,10 @@ def train(G, D, config, args, dev):
         set_seed(args.seed)
 
     # Logger
-    path_log = 'runs/' + args.task_name
+    path_log = 'runs_self/' + args.task_name
     writer = SummaryWriter(path_log)
     writer.add_text('config', str(args))
     print('logger name:', path_log)
-
-    # Models 
-    vgg_per = VGG16Perceptual()
-    encoder = EncoderF_16().to(dev)
-
-    # Optimizer
-    optimizer_g = optim.Adam(encoder.parameters(),
-            lr=args.lr, betas=(args.b1, args.b2))
-    optimizer_d = optim.Adam(D.parameters(),
-            lr=args.lr_d, betas=(args.b1_d, args.b2_d))
 
     # Datasets
     prep = transforms.Compose([
@@ -221,124 +207,68 @@ def train(G, D, config, args, dev):
     dataloader = DataLoader(dataset, batch_size=args.size_batch, shuffle=False,
             num_workers=8, drop_last=True)
 
-    dataset_val = ImageFolder(args.path_dataset_encoder_val, transform=prep)
-    dataloader_val = DataLoader(dataset_val, batch_size=args.size_batch, shuffle=False,
-            num_workers=8, drop_last=True)
+    x_dataset, _ = next(iter(dataloader))
+    x_dataset = x_dataset.to(dev)
 
-    dataset_sampling = ImageFolder(args.path_sampling, transform=prep)
-    dataloader_sampling = DataLoader(dataset_val, batch_size=args.size_batch, shuffle=False,
-            num_workers=8, drop_last=True)
-    dataloader_sampling = get_inf_batch(dataloader_sampling)
+    # Models 
+    vgg_per = VGG16Perceptual()
+    encoder = EncoderFZ_16().to(dev)
 
-    # Fix valid
-    with torch.no_grad():
-        x_test_val, _ = next(iter(dataloader_val))
-        x_test_val = transforms.Grayscale()(x_test_val)
+    # Optimizer
+    optimizer = optim.Adam(encoder.parameters(),
+            lr=args.lr, betas=(args.b1, args.b2))
 
-        x_test, _ = next(iter(dataloader))
-        grid_init = make_grid(x_test, nrow=4)
-        writer.add_image('GT', grid_init)
-        writer.flush()
+    for i in tqdm(range(args.num_iter)):
+        # Sample C 
+        c = torch.ones(args.size_batch) * args.class_index
+        c = c.to(dev).long()
 
-        c_test = torch.ones(args.size_batch) * args.class_index
-        c_test = c_test.to(dev).long()
-        c_test = G.shared(c_test)
+        # Sample Z
+        z = torch.zeros((args.size_batch, G.dim_z)).to(dev)
+        z.normal_(mean=0, std=0.8)
 
-        x_test = transforms.Grayscale()(x_test)
-        z_test = torch.zeros((args.size_batch, G.dim_z)).to(dev)
-        z_test.normal_(mean=0, std=0.8)
+        # Generate
+        f = G.forward_to(z, G.shared(c), args.num_layer)
+        x = G.forward_from(z, G.shared(c), args.num_layer, f)
+        x = (x + 1) * 0.5
 
+        # Inference
+        x_gray = transforms.Grayscale()(x)
+        f_hat, z_hat = encoder(x_gray)
 
-    dataset = ImageFolder(args.path_dataset_encoder, transform=prep)
-    dataloader = DataLoader(dataset, batch_size=args.size_batch, shuffle=True,
-            num_workers=8, drop_last=True)
+        loss_mse_z = nn.MSELoss()(z, z_hat) 
+        loss_mse_f = nn.MSELoss()(f, f_hat)
+        loss = loss_mse_f * args.coef_mse_f + loss_mse_z * args.coef_mse_z
 
-    num_iter = 0
-    for epoch in range(args.num_epoch):
-        for i, (x, _) in enumerate(tqdm(dataloader)):
-            num_iter += 1
-            x = x.to(dev)
-            x_ = x.to(dev)
-            x_ = transforms.Grayscale()(x_)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
 
-            # Sample z
-            z = torch.zeros((args.size_batch, G.dim_z)).to(dev)
-            z.normal_(mean=0, std=0.8)
-
-            c = torch.ones(args.size_batch) * args.class_index
-            c = c.to(dev).long()
-
-
-            # Discriminator Loss
-            if args.loss_adv: 
-                for _ in range(args.num_dis):
-                    # Infer f
-                    f = encoder(x_) # [batch, 1024, 16, 16]
-                    fake = G.forward_from(z, G.shared(c), args.num_layer, f)
-
-                    optimizer_d.zero_grad()
-
-                    x_sample, _ = dataloader_sampling.__next__()
-                    x_sample = x_sample.to(dev)
-                    x_rerange = (x_sample - 0.5) * 2
-
-                    critic_real, _ = D(x_rerange, c)
-                    critic_fake, _ = D(fake, c)
-                    d_loss_real, d_loss_fake = loss_hinge_dis(critic_fake, critic_real)
-                    loss_d = (d_loss_real + d_loss_fake) / 2  
-
-                    loss_d.backward()
-                    optimizer_d.step()
-
-            # Generator Loss 
-            f = encoder(x_) # [batch, 1024, 16, 16]
-            fake = G.forward_from(z, G.shared(c), args.num_layer, f)
-
-            optimizer_g.zero_grad()
-            if args.loss_adv:
-                critic, _ = D(fake, c)
-                loss_g = loss_hinge_gen(critic) * args.coef_adv
-                loss_g.backward(retain_graph=True)
-
-            fake = fake.add(1).div(2)
-            if args.loss_mse:
-                loss_mse = args.coef_mse * nn.MSELoss()(x, fake)
-                loss_mse.backward(retain_graph=True)
-            if args.loss_lpips:
-                loss_lpips = args.coef_lpips * vgg_per.perceptual_loss(x, fake)
-                loss_lpips.backward()
-
-            optimizer_g.step()
-
-            # Logger
-            if i % args.interval_save_loss == 0:
-                writer.add_scalar('mse', loss_mse.item(), num_iter)
-                writer.add_scalar('lpips', loss_lpips.item(), num_iter)
-                if args.loss_adv:
-                    # writer.add_scalar('loss_d', loss_d.item(), num_iter)
-                    # writer.add_scalar('loss_g', loss_g.item(), num_iter)
-                    writer.add_scalars('GAN loss', 
-                        { 'G':loss_g.item(), 'D':loss_d.item()}, num_iter)
-
-
-            if i % args.interval_save_train == 0:
-                with torch.no_grad():
-                    f = encoder(x_test.to(dev))
-                    output = G.forward_from(z_test, c_test, args.num_layer, f)
-                    output = output.add(1).div(2)
-                    grid = make_grid(output, nrow=4)
-                    writer.add_image('recon_train', grid, num_iter)
-                    writer.flush()
-                    torch.save(encoder.state_dict(), args.task_name + '.ckpt') 
-
-            if i % args.interval_save_test == 0:
-                with torch.no_grad():
-                    f = encoder(x_test_val.to(dev))
-                    output = G.forward_from(z_test, c_test, args.num_layer, f)
-                    output = output.add(1).div(2)
-                    grid = make_grid(output, nrow=4)
-                    writer.add_image('recon_val', grid, num_iter)
-                    writer.flush()
+        if i % args.interval_save_train == 0:
+            writer.add_scalar('mse_z', loss_mse_z.item(), i)
+            writer.add_scalar('mse_f', loss_mse_f.item(), i)
+        if i % args.interval_save_train == 0:
+            # sample vs recon
+            with torch.no_grad():
+                recon = G.forward_from(z_hat, G.shared(c), 
+                        args.num_layer, f_hat)
+            recon = (recon + 1) * 0.5
+            grid = torch.cat([x, recon], dim=0)
+            grid = make_grid(grid, nrow=args.size_batch)
+            writer.add_image('recon_train', grid, i)
+            writer.flush()
+        if i % args.interval_save_test == 0:
+            # use real image 
+            x_gray = transforms.Grayscale()(x_dataset)
+            with torch.no_grad():
+                f_hat, z_hat = encoder(x_gray)
+                recon = G.forward_from(z_hat, G.shared(c), 
+                        args.num_layer, f_hat)
+            recon = (recon + 1) * 0.5
+            grid = torch.cat([x_dataset, recon], dim=0)
+            grid = make_grid(grid, nrow=args.size_batch)
+            writer.add_image('recon_test', grid, i)
+            writer.flush()
 
 
 def main():

@@ -1,16 +1,15 @@
 ## Experiments 
  
-### using samplling real image
+### using samplling real image (V3)
 - I thought that the small number of real image is the cause of the poor 
 performance of the discriminator. So, sampling the images from BIGGAN about 
 50K and use this as real image when training discriminator
 
 #### Results
-- on-going
-
+- No improvement
 ---
 
-### Seperate Optimizer Generator Loss from Total loss 
+### Small Learning Rate for Adversarial Training (V4)
 - Adversarial training was extremely unstable. What if I descrease the 
 learning rate for GAN loss as training or just very small learning rate for
 adversarial training. I expect this scheme would make the training more stable.
@@ -19,6 +18,11 @@ adversarial loss.
 
 #### Results
 - Not yet 
+
+---
+### Use Pretrained Discriminator (V5)
+- 
+
 
 ---
 
@@ -42,3 +46,8 @@ I thought that if I use smaller learning rate, it would be more stable.
 ## Trivial Info.
 
 - Seemingly good quality MSE at 5e-4 
+
+
+## Case Study
+
+### Discriminator Pretrained 
