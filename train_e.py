@@ -41,7 +41,7 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='encoder_f_16_v4')
+    parser.add_argument('--task_name', default='encoder_f_16_v5')
     parser.add_argument('--detail', 
         default='small learning rate for adversarial training')
 
@@ -75,7 +75,7 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=0.0001)
     parser.add_argument("--b1", type=float, default=0.0)
     parser.add_argument("--b2", type=float, default=0.999)
-    parser.add_argument("--lr_d", type=float, default=0.00005)
+    parser.add_argument("--lr_d", type=float, default=0.00003)
     parser.add_argument("--b1_d", type=float, default=0.0)
     parser.add_argument("--b2_d", type=float, default=0.999)
 
@@ -96,7 +96,7 @@ def parse_args():
     # Loss coef
     parser.add_argument('--coef_mse', type=float, default=1.0)
     parser.add_argument('--coef_lpips', type=float, default=0.1)
-    parser.add_argument('--coef_adv', type=float, default=0.05)
+    parser.add_argument('--coef_adv', type=float, default=0.03)
 
     # Others
     parser.add_argument('--seed', type=int, default=42)

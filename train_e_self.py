@@ -84,8 +84,8 @@ def parse_args():
     # Loss
     parser.add_argument('--loss_mse_z', action='store_true', default=True)
     parser.add_argument('--loss_mse_f', action='store_true', default=True)
-    parser.add_argument('--loss_recon', action='store_true', default=True)
-    parser.add_argument('--loss_lpips', action='store_true', default=True)
+    parser.add_argument('--loss_recon', action='store_true', default=False)
+    parser.add_argument('--loss_lpips', action='store_true', default=False)
 
     # Loss coef
     parser.add_argument('--coef_mse_z', type=float, default=1.0)
@@ -95,7 +95,7 @@ def parse_args():
 
     # Others
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--size_batch', default=4)
+    parser.add_argument('--size_batch', default=8)
     parser.add_argument('--w_class', default=False)
     parser.add_argument('--device', default='cuda:1')
 
@@ -180,12 +180,12 @@ def get_inf_batch(loader):
 def train(G, D, config, args, dev):
     # Make Eval
     G.eval().to(dev)
-    if args.use_pretrained_d:
-        print("# SET DISCRIMINATOR EVAL")
-        D.eval().to(dev)
-    else:
-        print("# SET DISCRIMINATOR TRAIN")
-        D.train().to(dev)
+    # if args.use_pretrained_d:
+    #     print("# SET DISCRIMINATOR EVAL")
+    #     D.eval().to(dev)
+    # else:
+    #     print("# SET DISCRIMINATOR TRAIN")
+    #     D.train().to(dev)
     print(args)
     if args.seed >= 0:
         set_seed(args.seed)
