@@ -1,4 +1,5 @@
 import models
+from os.path import join 
 from encoders import EncoderFZ_16
 
 from torch.utils.tensorboard import SummaryWriter
@@ -41,12 +42,13 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='encoder_fz_self_v1')
+    parser.add_argument('--task_name', default='encoder_fz_self_v2')
     parser.add_argument('--detail', 
-        default='new idea for encoder training')
+        default='new idea for encoder training with mse loss')
 
     # IO
     parser.add_argument('--path_config', default='config.pickle')
+    parser.add_argument('--path_ckpt', default='./ckpts')
     parser.add_argument('--path_ckpt_g', default='./pretrained/G_ema_256.pth')
     parser.add_argument('--path_ckpt_d', default='./pretrained/D_256.pth')
     parser.add_argument('--path_imgnet_train', default='./imgnet/train')
@@ -59,13 +61,14 @@ def parse_args():
     parser.add_argument('--class_index', default=15)
     parser.add_argument('--num_layer', default=2)
 
-    parser.add_argument('--num_iter', default=40000)
+    parser.add_argument('--num_iter', default=80000)
     parser.add_argument('--interval_save_loss', default=4)
     parser.add_argument('--interval_save_train', default=20)
-    parser.add_argument('--interval_save_test', default=200)
+    parser.add_argument('--interval_save_test', default=100)
+    parser.add_argument('--interval_save_ckpt', default=100)
 
     # Discriminator Options
-    parser.add_argument('--z_std', default=0.8)
+    parser.add_argument('--z_std', default=0.9)
 
     # Optimizer
     parser.add_argument("--lr", type=float, default=0.0001)
@@ -84,11 +87,11 @@ def parse_args():
     # Loss
     parser.add_argument('--loss_mse_z', action='store_true', default=True)
     parser.add_argument('--loss_mse_f', action='store_true', default=True)
-    parser.add_argument('--loss_recon', action='store_true', default=False)
-    parser.add_argument('--loss_lpips', action='store_true', default=False)
+    parser.add_argument('--loss_recon', action='store_true', default=True)
+    parser.add_argument('--loss_lpips', action='store_true', default=True)
 
     # Loss coef
-    parser.add_argument('--coef_mse_z', type=float, default=1.0)
+    parser.add_argument('--coef_mse_z', type=float, default=0.5)
     parser.add_argument('--coef_mse_f', type=float, default=1.0)
     parser.add_argument('--coef_recon', type=float, default=1.0)
     parser.add_argument('--coef_lpips', type=float, default=0.1)
@@ -97,7 +100,7 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--size_batch', default=8)
     parser.add_argument('--w_class', default=False)
-    parser.add_argument('--device', default='cuda:1')
+    parser.add_argument('--device', default='cuda:0')
 
     return parser.parse_args()
 
@@ -180,12 +183,6 @@ def get_inf_batch(loader):
 def train(G, D, config, args, dev):
     # Make Eval
     G.eval().to(dev)
-    # if args.use_pretrained_d:
-    #     print("# SET DISCRIMINATOR EVAL")
-    #     D.eval().to(dev)
-    # else:
-    #     print("# SET DISCRIMINATOR TRAIN")
-    #     D.train().to(dev)
     print(args)
     if args.seed >= 0:
         set_seed(args.seed)
@@ -224,7 +221,7 @@ def train(G, D, config, args, dev):
 
         # Sample Z
         z = torch.zeros((args.size_batch, G.dim_z)).to(dev)
-        z.normal_(mean=0, std=0.8)
+        z.normal_(mean=0, std=args.z_std)
 
         # Generate
         f = G.forward_to(z, G.shared(c), args.num_layer)
@@ -252,7 +249,7 @@ def train(G, D, config, args, dev):
             loss += loss_recon * args.coef_recon
             if args.loss_lpips:
                 loss_lpips = vgg_per.perceptual_loss(x, recon)
-                loss_lpips +=  loss_lpips * args.coef_lpips
+                loss +=  loss_lpips * args.coef_lpips
 
         loss.backward()
         optimizer.step()
@@ -260,15 +257,18 @@ def train(G, D, config, args, dev):
         if i % args.interval_save_train == 0:
             writer.add_scalar('mse_z', loss_mse_z.item(), i)
             writer.add_scalar('mse_f', loss_mse_f.item(), i)
+            if args.loss_lpips:
+                writer.add_scalar('lpips', loss_lpips.item(), i)
         if i % args.interval_save_train == 0:
             # sample vs recon
-            with torch.no_grad():
-                recon = G.forward_from(z_hat, G.shared(c), 
-                        args.num_layer, f_hat)
-            recon = (recon + 1) * 0.5
             grid = torch.cat([x, recon], dim=0)
             grid = make_grid(grid, nrow=args.size_batch)
             writer.add_image('recon_train', grid, i)
+
+            mse_recon_train = nn.MSELoss()(x, recon)
+            writer.add_scalars('mse_recon',
+                    {'train': mse_recon_train.item()}, i)
+
             writer.flush()
         if i % args.interval_save_test == 0:
             # use real image 
@@ -281,7 +281,16 @@ def train(G, D, config, args, dev):
             grid = torch.cat([x_dataset, recon], dim=0)
             grid = make_grid(grid, nrow=args.size_batch)
             writer.add_image('recon_test', grid, i)
+
+            mse_recon_test = nn.MSELoss()(x_dataset, recon)
+            writer.add_scalars('mse_recon',
+                    {'test': mse_recon_test.item()}, i)
             writer.flush()
+        if i % args.interval_save_ckpt == 0:
+            path_target = join(args.path_ckpt, args.task_name + '.ckpt')
+            torch.save(encoder.state_dict(), path_target) 
+
+
 
 
 def main():
