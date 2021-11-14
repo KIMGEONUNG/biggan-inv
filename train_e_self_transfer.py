@@ -86,12 +86,12 @@ def parse_args():
     parser.add_argument('--use_pretrained_d', default=False)
 
     # Loss
-    parser.add_argument('--loss_mse', action='store_true', default=False)
-    parser.add_argument('--loss_lpips', action='store_true', default=True)
+    parser.add_argument('--loss_mse', action='store_true', default=True)
+    parser.add_argument('--loss_lpips', action='store_true', default=False)
 
     # Loss coef
     parser.add_argument('--coef_mse', type=float, default=1.0)
-    parser.add_argument('--coef_lpips', type=float, default=1.0)
+    parser.add_argument('--coef_lpips', type=float, default=0.1)
 
     # Others
     parser.add_argument('--seed', type=int, default=42)
@@ -252,7 +252,9 @@ def train(G, D, config, args, dev):
             optimizer.zero_grad()
             loss = 0
             if args.loss_mse:
-                loss_mse = nn.MSELoss()(x, recon) 
+                x_down = transforms.Resize(64)(x)
+                recon_down = transforms.Resize(64)(recon)
+                loss_mse = nn.MSELoss()(x_down, recon_down) 
                 loss += loss_mse * args.coef_mse
 
             if args.loss_lpips:
