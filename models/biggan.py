@@ -400,6 +400,59 @@ class Generator(nn.Module):
         return torch.tanh(self.output_layer(h))
 
 
+    def forward_from_multi(self, z, y, num_layer, h, use_in=False):
+        # If hierarchical, concatenate zs and ys
+        if self.hier:
+            zs = torch.split(z, self.z_chunk_size, 1)
+            z = zs[0]
+            ys = [torch.cat([y, item], 1) for item in zs[1:]]
+        else:
+            ys = [y] * len(self.blocks)
+
+        hs = [h]
+        # Loop over blocks
+        for index, blocklist in enumerate(self.blocks):
+            # Second inner loop in case block has multiple layers
+            if index < num_layer:
+                continue
+
+            for block in blocklist:
+                h = block(h, ys[index], use_in)
+                hs.append(h)
+
+        # Apply batchnorm-relu-conv-tanh at output
+        return torch.tanh(self.output_layer(h)), hs
+
+
+    def forward_to_multi(self, z, y, num_layer, use_in=False):
+        # If hierarchical, concatenate zs and ys
+        if self.hier:
+            zs = torch.split(z, self.z_chunk_size, 1)
+            z = zs[0]
+            ys = [torch.cat([y, item], 1) for item in zs[1:]]
+        else:
+            ys = [y] * len(self.blocks)
+
+        # First linear layer
+        h = self.linear(z)
+        # Reshape
+        h = h.view(h.size(0), -1, self.bottom_width, self.bottom_width)
+
+        hs = []
+        # Loop over blocks
+        for index, blocklist in enumerate(self.blocks):
+            # Second inner loop in case block has multiple layers
+            hs.append(h)
+            if index == num_layer:
+                return hs
+
+            for block in blocklist:
+                h = block(h, ys[index], use_in)
+
+        # Apply batchnorm-relu-conv-tanh at output
+        return torch.tanh(self.output_layer(h))
+
+
 # Discriminator architecture, same paradigm as G's above
 def D_arch(ch=64, attention='64', ksize='333333', dilation='111111'):
     arch = {}

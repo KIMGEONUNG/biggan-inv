@@ -1,6 +1,6 @@
 import models
 from os.path import join 
-from encoders import EncoderFZ_16
+from encoders import EncoderFZ_16_Multi
 
 from torch.utils.tensorboard import SummaryWriter
 import torch
@@ -42,9 +42,9 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='encoder_fz_self_v2')
+    parser.add_argument('--task_name', default='encoder_fz_self_v3')
     parser.add_argument('--detail', 
-        default='new idea for encoder training with mse loss')
+        default='multi level mse')
 
     # IO
     parser.add_argument('--path_config', default='config.pickle')
@@ -87,18 +87,14 @@ def parse_args():
     # Loss
     parser.add_argument('--loss_mse_z', action='store_true', default=True)
     parser.add_argument('--loss_mse_f', action='store_true', default=True)
-    parser.add_argument('--loss_recon', action='store_true', default=True)
-    parser.add_argument('--loss_lpips', action='store_true', default=True)
 
     # Loss coef
     parser.add_argument('--coef_mse_z', type=float, default=0.5)
     parser.add_argument('--coef_mse_f', type=float, default=1.0)
-    parser.add_argument('--coef_recon', type=float, default=1.0)
-    parser.add_argument('--coef_lpips', type=float, default=0.1)
 
     # Others
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--size_batch', default=8)
+    parser.add_argument('--size_batch', default=16)
     parser.add_argument('--w_class', default=False)
     parser.add_argument('--device', default='cuda:0')
 
@@ -208,7 +204,7 @@ def train(G, D, config, args, dev):
 
     # Models 
     vgg_per = VGG16Perceptual()
-    encoder = EncoderFZ_16().to(dev)
+    encoder = EncoderFZ_16_Multi().to(dev)
 
     # Optimizer
     optimizer = optim.Adam(encoder.parameters(),
@@ -225,12 +221,14 @@ def train(G, D, config, args, dev):
 
         # Generate
         f = G.forward_to(z, G.shared(c), args.num_layer)
-        x = G.forward_from(z, G.shared(c), args.num_layer, f)
+        x, fs = G.forward_from_multi(z, G.shared(c), args.num_layer, f)
         x = (x + 1) * 0.5
 
         # Inference
         x_gray = transforms.Grayscale()(x)
-        f_hat, z_hat = encoder(x_gray)
+        fs_hat, z_hat = encoder(x_gray)
+        f_hat = fs_hat[-1]
+        fs_hat.reverse()
 
         # Loss
         optimizer.zero_grad()
@@ -238,29 +236,27 @@ def train(G, D, config, args, dev):
         if args.loss_mse_z:
             loss_mse_z = nn.MSELoss()(z, z_hat) 
             loss += loss_mse_z * args.coef_mse_z
+
         if args.loss_mse_f:
-            loss_mse_f = nn.MSELoss()(f, f_hat)
-            loss += loss_mse_f * args.coef_mse_f
-        if args.loss_recon:
-            recon = G.forward_from(z_hat, G.shared(c), 
-                    args.num_layer, f_hat)
-            recon = (recon + 1) * 0.5
-            loss_recon = nn.MSELoss()(x, recon)
-            loss += loss_recon * args.coef_recon
-            if args.loss_lpips:
-                loss_lpips = vgg_per.perceptual_loss(x, recon)
-                loss +=  loss_lpips * args.coef_lpips
+            loss_mse_f1 = nn.MSELoss()(fs[0], fs_hat[0])
+            loss_mse_f2 = nn.MSELoss()(fs[1], fs_hat[1])
+            loss_mse_f3 = nn.MSELoss()(fs[2], fs_hat[2])
+            loss_mse_f = loss_mse_f1 + loss_mse_f2 * 0.5 + loss_mse_f3 * 0.5
+            loss += loss_mse_f
 
         loss.backward()
         optimizer.step()
 
         if i % args.interval_save_train == 0:
             writer.add_scalar('mse_z', loss_mse_z.item(), i)
-            writer.add_scalar('mse_f', loss_mse_f.item(), i)
-            if args.loss_lpips:
-                writer.add_scalar('lpips', loss_lpips.item(), i)
+            writer.add_scalar('mse_f', loss_mse_f1.item(), i)
+            writer.add_scalar('mse_f_total', loss_mse_f.item(), i)
         if i % args.interval_save_train == 0:
             # sample vs recon
+            with torch.no_grad():
+                recon = G.forward_from(z_hat, G.shared(c), 
+                        args.num_layer, f_hat)
+            recon = (recon + 1) * 0.5
             grid = torch.cat([x, recon], dim=0)
             grid = make_grid(grid, nrow=args.size_batch)
             writer.add_image('recon_train', grid, i)
@@ -274,7 +270,8 @@ def train(G, D, config, args, dev):
             # use real image 
             x_gray = transforms.Grayscale()(x_dataset)
             with torch.no_grad():
-                f_hat, z_hat = encoder(x_gray)
+                fs_hat, z_hat = encoder(x_gray)
+                f_hat = fs_hat[-1]
                 recon = G.forward_from(z_hat, G.shared(c), 
                         args.num_layer, f_hat)
             recon = (recon + 1) * 0.5
