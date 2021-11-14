@@ -42,9 +42,9 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='encoder_fz_self_transfer_v1')
+    parser.add_argument('--task_name', default='encoder_fz_self_transfer_v3')
     parser.add_argument('--detail', 
-        default='transfer learning using pretrained inversion encoder')
+        default='only use lpips')
 
     # IO
     parser.add_argument('--path_config', default='config.pickle')
@@ -86,12 +86,12 @@ def parse_args():
     parser.add_argument('--use_pretrained_d', default=False)
 
     # Loss
-    parser.add_argument('--loss_mse', action='store_true', default=True)
+    parser.add_argument('--loss_mse', action='store_true', default=False)
     parser.add_argument('--loss_lpips', action='store_true', default=True)
 
     # Loss coef
     parser.add_argument('--coef_mse', type=float, default=1.0)
-    parser.add_argument('--coef_lpips', type=float, default=0.1)
+    parser.add_argument('--coef_lpips', type=float, default=1.0)
 
     # Others
     parser.add_argument('--seed', type=int, default=42)
@@ -263,8 +263,10 @@ def train(G, D, config, args, dev):
             optimizer.step()
 
             if i % args.interval_save_train == 0:
-                writer.add_scalar('mse', loss_mse.item(), num_iter)
-                writer.add_scalar('lpips', loss_lpips.item(), num_iter)
+                if args.loss_mse:
+                    writer.add_scalar('mse', loss_mse.item(), num_iter)
+                if args.loss_lpips:
+                    writer.add_scalar('lpips', loss_lpips.item(), num_iter)
                 
             if i % args.interval_save_train == 0:
                 with torch.no_grad():
