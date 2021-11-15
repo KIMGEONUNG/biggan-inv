@@ -42,7 +42,7 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='encoder_fz_self_transfer_v3')
+    parser.add_argument('--task_name', default='encoder_fz_self_transfer_v4')
     parser.add_argument('--detail', 
         default='only use lpips')
 
@@ -228,6 +228,11 @@ def train(G, D, config, args, dev):
     # Optimizer
     optimizer = optim.Adam(encoder.parameters(),
             lr=args.lr, betas=(args.b1, args.b2))
+    
+    trans_mse = transforms.Compose([
+            transforms.Resize(64),
+            transforms.Grayscale(),
+        ])
 
     num_iter = 0 
     for epoch in range(args.num_epoch):
@@ -252,9 +257,9 @@ def train(G, D, config, args, dev):
             optimizer.zero_grad()
             loss = 0
             if args.loss_mse:
-                x_down = transforms.Resize(64)(x)
-                recon_down = transforms.Resize(64)(recon)
-                loss_mse = nn.MSELoss()(x_down, recon_down) 
+                x_trans  = trans_mse(x)
+                recon_trans = trans_mse(recon)
+                loss_mse = nn.MSELoss()(x_trans , recon_trans) 
                 loss += loss_mse * args.coef_mse
 
             if args.loss_lpips:
