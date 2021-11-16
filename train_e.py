@@ -41,9 +41,9 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='encoder_f_16_v6')
+    parser.add_argument('--task_name', default='encoder_f_16_v7')
     parser.add_argument('--detail', 
-        default='Use pretrained Discriminator')
+        default='Use pretrained Discriminator + fine tuning')
 
     # Mode
     parser.add_argument('--mode', default='train', 
@@ -184,7 +184,8 @@ def get_inf_batch(loader):
 
 def train(G, D, config, args, dev):
     # Make Eval
-    G.eval().to(dev)
+    # G.eval().to(dev)
+    G.train().to(dev)
     # if args.use_pretrained_d:
     #     print("# SET DISCRIMINATOR EVAL")
     #     D.eval().to(dev)
@@ -206,7 +207,8 @@ def train(G, D, config, args, dev):
     encoder = EncoderF_16().to(dev)
 
     # Optimizer
-    optimizer_g = optim.Adam(encoder.parameters(),
+    optimizer_g = optim.Adam(
+            list(encoder.parameters()) + list(G.parameters()),
             lr=args.lr, betas=(args.b1, args.b2))
     optimizer_d = optim.Adam(D.parameters(),
             lr=args.lr_d, betas=(args.b1_d, args.b2_d))
