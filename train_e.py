@@ -41,9 +41,9 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='encoder_f_16_v7')
+    parser.add_argument('--task_name', default='encoder_f_16_v8')
     parser.add_argument('--detail', 
-        default='Use pretrained Discriminator + fine tuning')
+        default='Use layer normalization in encoder')
 
     # Mode
     parser.add_argument('--mode', default='train', 
@@ -66,6 +66,9 @@ def parse_args():
     parser.add_argument('--interval_save_loss', default=4)
     parser.add_argument('--interval_save_train', default=20)
     parser.add_argument('--interval_save_test', default=200)
+
+    parser.add_argument('--finetune_g', default=True)
+    parser.add_argument('--finetune_d', default=True)
 
     # Discriminator Options
     parser.add_argument('--num_dis', default=1)
@@ -184,14 +187,23 @@ def get_inf_batch(loader):
 
 def train(G, D, config, args, dev):
     # Make Eval
-    # G.eval().to(dev)
-    G.train().to(dev)
+    if(args.finetune_g):
+        print("# GENERATOR FINETUNE")
+        G.train().to(dev)
+    else:
+        print("# GENERATOR FIX")
+        G.eval().to(dev)
+
+    if(args.finetune_d):
+        print("# DISCRIMINATOR FINETUNE")
+        D.train().to(dev)
+    else:
+        print("# DISCRIMINATOR FIX")
+        D.eval().to(dev)
     # if args.use_pretrained_d:
     #     print("# SET DISCRIMINATOR EVAL")
     #     D.eval().to(dev)
     # else:
-    #     print("# SET DISCRIMINATOR TRAIN")
-    D.train().to(dev)
     print(args)
     if args.seed >= 0:
         set_seed(args.seed)
@@ -204,7 +216,7 @@ def train(G, D, config, args, dev):
 
     # Models 
     vgg_per = VGG16Perceptual()
-    encoder = EncoderF_16().to(dev)
+    encoder = EncoderF_16(norm='instance').to(dev)
 
     # Optimizer
     optimizer_g = optim.Adam(
