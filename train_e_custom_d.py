@@ -1,5 +1,6 @@
 import models
 from encoders import EncoderF_16
+from discriminators import D_Down
 
 from torch.utils.tensorboard import SummaryWriter
 import torch
@@ -41,9 +42,9 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='encoder_f_16_v9')
+    parser.add_argument('--task_name', default='encoder_f_16_downsampleD')
     parser.add_argument('--detail', 
-        default='fix the bug')
+        default='Use layer normalization in encoder')
 
     # Mode
     parser.add_argument('--mode', default='train', 
@@ -89,7 +90,6 @@ def parse_args():
 
     # loader
     parser.add_argument('--use_pretrained_g', default=True)
-    parser.add_argument('--use_pretrained_d', default=True)
 
     # Loss
     parser.add_argument('--loss_mse', action='store_true', default=True)
@@ -103,9 +103,9 @@ def parse_args():
 
     # Others
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--size_batch', default=8)
+    parser.add_argument('--size_batch', default=2)
     parser.add_argument('--w_class', default=False)
-    parser.add_argument('--device', default='cuda:0')
+    parser.add_argument('--device', default='cuda:1')
 
     return parser.parse_args()
 
@@ -185,7 +185,7 @@ def get_inf_batch(loader):
             yield x
 
 
-def train(G, D, config, args, dev):
+def train(G, config, args, dev):
     # Make Eval
     if(args.finetune_g):
         print("# GENERATOR FINETUNE")
@@ -194,22 +194,15 @@ def train(G, D, config, args, dev):
         print("# GENERATOR FIX")
         G.eval().to(dev)
 
-    if(args.finetune_d):
-        print("# DISCRIMINATOR FINETUNE")
-        D.train().to(dev)
-    else:
-        print("# DISCRIMINATOR FIX")
-        D.eval().to(dev)
-    # if args.use_pretrained_d:
-    #     print("# SET DISCRIMINATOR EVAL")
-    #     D.eval().to(dev)
-    # else:
+    # Discriminator
+    D = D_Down().to(dev)
+
     print(args)
     if args.seed >= 0:
         set_seed(args.seed)
 
     # Logger
-    path_log = 'runs/' + args.task_name
+    path_log = 'runs_downd/' + args.task_name
     writer = SummaryWriter(path_log)
     writer.add_text('config', str(args))
     print('logger name:', path_log)
@@ -266,52 +259,55 @@ def train(G, D, config, args, dev):
     dataset = ImageFolder(args.path_dataset_encoder, transform=prep)
     dataloader = DataLoader(dataset, batch_size=args.size_batch, shuffle=True,
             num_workers=8, drop_last=True)
-
+    
+    # Label
+    label_real = torch.ones(args.size_batch).to(dev)
+    label_fake = torch.zeros(args.size_batch).to(dev)
+    
     num_iter = 0
     for epoch in range(args.num_epoch):
         for i, (x, _) in enumerate(tqdm(dataloader)):
             num_iter += 1
             x = x.to(dev)
-            x_ = x.to(dev)
-            x_ = transforms.Grayscale()(x_)
+            x_gray = transforms.Grayscale()(x)
 
-            # Sample z
+            # Randome Sample z
             z = torch.zeros((args.size_batch, G.dim_z)).to(dev)
             z.normal_(mean=0, std=0.8)
 
             c = torch.ones(args.size_batch) * args.class_index
             c = c.to(dev).long()
 
-
-            # Discriminator Loss
+            # Discriminator Update 
             if args.loss_adv: 
                 for _ in range(args.num_dis):
                     # Infer f
-                    f = encoder(x_) # [batch, 1024, 16, 16]
+                    f = encoder(x_gray) # [batch, 1024, 16, 16]
                     fake = G.forward_from(z, G.shared(c), args.num_layer, f)
 
                     optimizer_d.zero_grad()
 
                     x_sample, _ = dataloader_sampling.__next__()
                     x_sample = x_sample.to(dev)
-                    x_rerange = (x_sample - 0.5) * 2
+                    x_sample = (x_sample - 0.5) * 2
 
-                    critic_real, _ = D(x_rerange, c)
-                    critic_fake, _ = D(fake, c)
-                    d_loss_real, d_loss_fake = loss_hinge_dis(critic_fake, critic_real)
-                    loss_d = (d_loss_real + d_loss_fake) / 2  
+                    prop_real_d = D(x_sample).view(-1)
+                    prop_fake_d = D(fake).view(-1)
+                    loss_real = nn.BCELoss()(prop_real_d,label_real)
+                    loss_fake = nn.BCELoss()(prop_fake_d, label_fake)
 
+                    loss_d = (loss_real + loss_fake) / 2  
                     loss_d.backward()
                     optimizer_d.step()
 
             # Generator Loss 
-            f = encoder(x_) # [batch, 1024, 16, 16]
+            f = encoder(x_gray) # [batch, 1024, 16, 16]
             fake = G.forward_from(z, G.shared(c), args.num_layer, f)
 
             optimizer_g.zero_grad()
             if args.loss_adv:
-                critic, _ = D(fake, c)
-                loss_g = loss_hinge_gen(critic) * args.coef_adv
+                prop_fake_g = D(fake).view(-1)
+                loss_g = nn.BCELoss()(prop_fake_g, label_real)
                 loss_g.backward(retain_graph=True)
 
             fake = fake.add(1).div(2)
@@ -329,8 +325,9 @@ def train(G, D, config, args, dev):
                 writer.add_scalar('mse', loss_mse.item(), num_iter)
                 writer.add_scalar('lpips', loss_lpips.item(), num_iter)
                 if args.loss_adv:
-                    # writer.add_scalar('loss_d', loss_d.item(), num_iter)
-                    # writer.add_scalar('loss_g', loss_g.item(), num_iter)
+                    writer.add_scalars('GAN probability', 
+                        { 'Real':prop_real_d.mean().item(), 
+                          'Fake':prop_fake_d.mean().item()}, num_iter)
                     writer.add_scalars('GAN loss', 
                         { 'G':loss_g.item(), 'D':loss_d.item()}, num_iter)
 
@@ -370,17 +367,13 @@ def main():
 
     # Load model
     G = models.Generator(**config)
-    D = models.Discriminator(**config)
 
     # Load ckpt
     if args.use_pretrained_g:
         print("#@ LOAD PRETRAINED GENERATOR")
         G.load_state_dict(torch.load(args.path_ckpt_g), strict=False)
-    if args.use_pretrained_d:
-        print("#@ LOAD PRETRAINED DISCRIMINATOR")
-        D.load_state_dict(torch.load(args.path_ckpt_d), strict=False)
 
-    train(G, D, config, args, dev)
+    train(G, config, args, dev)
 
 
 if __name__ == '__main__':
