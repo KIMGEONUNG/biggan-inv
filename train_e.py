@@ -1,3 +1,5 @@
+import os
+from os.path import join, exists
 import models
 from encoders import EncoderF_16
 
@@ -48,8 +50,12 @@ def parse_args():
     # Mode
     parser.add_argument('--mode', default='train', 
             choices=['sampling', 'critic', 'wip', 'train'])
+    
+    parser.add_argument('--norm_type', default='instance', 
+            choices=['instance', 'batch', 'layer'])
 
     # IO
+    parser.add_argument('--path_log', default='ckpts')
     parser.add_argument('--path_config', default='config.pickle')
     parser.add_argument('--path_ckpt_g', default='./pretrained/G_ema_256.pth')
     parser.add_argument('--path_ckpt_d', default='./pretrained/D_256.pth')
@@ -66,6 +72,7 @@ def parse_args():
     parser.add_argument('--interval_save_loss', default=4)
     parser.add_argument('--interval_save_train', default=20)
     parser.add_argument('--interval_save_test', default=200)
+    parser.add_argument('--interval_save_ckpt', default=2000)
 
     parser.add_argument('--finetune_g', default=True)
     parser.add_argument('--finetune_d', default=True)
@@ -200,14 +207,18 @@ def train(G, D, config, args, dev):
     else:
         print("# DISCRIMINATOR FIX")
         D.eval().to(dev)
-    # if args.use_pretrained_d:
-    #     print("# SET DISCRIMINATOR EVAL")
-    #     D.eval().to(dev)
-    # else:
+
     print(args)
     if args.seed >= 0:
         set_seed(args.seed)
 
+    # Make directory for checkpoints    
+    if not exists(args.path_ckpts):
+        os.mkdir(args.path_ckpts)
+    path_ckpts = join(args.path_ckpts, args.task_name)
+    if not exists(path_ckpts):
+        os.mkdir(path_ckpts)
+       
     # Logger
     path_log = 'runs/' + args.task_name
     writer = SummaryWriter(path_log)
@@ -216,11 +227,13 @@ def train(G, D, config, args, dev):
 
     # Models 
     vgg_per = VGG16Perceptual()
-    encoder = EncoderF_16(norm='instance').to(dev)
+    encoder = EncoderF_16(norm=args.norm_type).to(dev)
 
     # Optimizer
-    optimizer_g = optim.Adam(
-            list(encoder.parameters()) + list(G.parameters()),
+    params = list(encoder.parameters())
+    if args.finetune_g:
+        params += list(G.parameters())
+    optimizer_g = optim.Adam(params,
             lr=args.lr, betas=(args.b1, args.b2))
     optimizer_d = optim.Adam(D.parameters(),
             lr=args.lr_d, betas=(args.b1_d, args.b2_d))
@@ -282,7 +295,6 @@ def train(G, D, config, args, dev):
             c = torch.ones(args.size_batch) * args.class_index
             c = c.to(dev).long()
 
-
             # Discriminator Loss
             if args.loss_adv: 
                 for _ in range(args.num_dis):
@@ -325,17 +337,14 @@ def train(G, D, config, args, dev):
             optimizer_g.step()
 
             # Logger
-            if i % args.interval_save_loss == 0:
+            if num_iter % args.interval_save_loss == 0:
                 writer.add_scalar('mse', loss_mse.item(), num_iter)
                 writer.add_scalar('lpips', loss_lpips.item(), num_iter)
                 if args.loss_adv:
-                    # writer.add_scalar('loss_d', loss_d.item(), num_iter)
-                    # writer.add_scalar('loss_g', loss_g.item(), num_iter)
                     writer.add_scalars('GAN loss', 
-                        { 'G':loss_g.item(), 'D':loss_d.item()}, num_iter)
+                        {'G': loss_g.item(), 'D': loss_d.item()}, num_iter)
 
-
-            if i % args.interval_save_train == 0:
+            if num_iter % args.interval_save_train == 0:
                 with torch.no_grad():
                     f = encoder(x_test.to(dev))
                     output = G.forward_from(z_test, c_test, args.num_layer, f)
@@ -343,9 +352,8 @@ def train(G, D, config, args, dev):
                     grid = make_grid(output, nrow=4)
                     writer.add_image('recon_train', grid, num_iter)
                     writer.flush()
-                    torch.save(encoder.state_dict(), args.task_name + '.ckpt') 
 
-            if i % args.interval_save_test == 0:
+            if num_iter % args.interval_save_test == 0:
                 with torch.no_grad():
                     f = encoder(x_test_val.to(dev))
                     output = G.forward_from(z_test, c_test, args.num_layer, f)
@@ -353,6 +361,19 @@ def train(G, D, config, args, dev):
                     grid = make_grid(output, nrow=4)
                     writer.add_image('recon_val', grid, num_iter)
                     writer.flush()
+
+            if num_iter % args.interval_save_ckpt == 0:
+                if args.finetune_g:
+                    name = 'G_%07d.ckpt' % num_iter 
+                    path = join(path_ckpts, name) 
+                    torch.save(G.state_dict(), path) 
+                if args.finetune_d:
+                    name = 'D_%07d.ckpt' % num_iter 
+                    path = join(path_ckpts, name) 
+                    torch.save(G.state_dict(), path) 
+                name = 'E_%07d.ckpt' % num_iter 
+                path = join(path_ckpts, name) 
+                torch.save(G.state_dict(), path) 
 
 
 def main():
@@ -362,7 +383,6 @@ def main():
     # Load Configuratuion
     with open(args.path_config, 'rb') as f:
         config = pickle.load(f)
-
 
     if args.print_config:
         for i in config:
