@@ -16,4 +16,4 @@ pretrained/
 sampling/
 config.pickle
 validation_f_16/
-
+ckpts/

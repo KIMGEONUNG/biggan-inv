@@ -43,7 +43,7 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='encoder_f_16_v9')
+    parser.add_argument('--task_name', default='encoder_f_16_finetune_v1')
     parser.add_argument('--detail', 
         default='fix the bug')
 
@@ -55,7 +55,7 @@ def parse_args():
             choices=['instance', 'batch', 'layer'])
 
     # IO
-    parser.add_argument('--path_log', default='ckpts')
+    parser.add_argument('--path_ckpts', default='ckpts')
     parser.add_argument('--path_config', default='config.pickle')
     parser.add_argument('--path_ckpt_g', default='./pretrained/G_ema_256.pth')
     parser.add_argument('--path_ckpt_d', default='./pretrained/D_256.pth')
@@ -72,7 +72,7 @@ def parse_args():
     parser.add_argument('--interval_save_loss', default=4)
     parser.add_argument('--interval_save_train', default=20)
     parser.add_argument('--interval_save_test', default=200)
-    parser.add_argument('--interval_save_ckpt', default=2000)
+    parser.add_argument('--interval_save_ckpt', default=600)
 
     parser.add_argument('--finetune_g', default=True)
     parser.add_argument('--finetune_d', default=True)
@@ -221,8 +221,12 @@ def train(G, D, config, args, dev):
     if not exists(path_ckpts):
         os.mkdir(path_ckpts)
        
+    # Save arguments
+    with open(join(path_ckpts, 'args.pkl'), 'wb') as f:
+        pickle.dump(args, f)
+
     # Logger
-    path_log = 'runs/' + args.task_name
+    path_log = 'runs_finetune/' + args.task_name
     writer = SummaryWriter(path_log)
     writer.add_text('config', str(args))
     print('logger name:', path_log)
@@ -246,13 +250,6 @@ def train(G, D, config, args, dev):
             transforms.Resize(256),
             transforms.CenterCrop(256),
             ])
-    dataset = ImageFolder(args.path_dataset_encoder, transform=prep)
-    dataloader = DataLoader(dataset, batch_size=args.size_batch, shuffle=False,
-            num_workers=8, drop_last=True)
-
-    dataset_val = ImageFolder(args.path_dataset_encoder_val, transform=prep)
-    dataloader_val = DataLoader(dataset_val, batch_size=args.size_batch, shuffle=False,
-            num_workers=8, drop_last=True)
 
     if args.real_target == 'sample':
         dataset_real = ImageFolder(args.path_sampling, transform=prep)
@@ -262,8 +259,16 @@ def train(G, D, config, args, dev):
             num_workers=8, drop_last=True)
     dataloader_real = get_inf_batch(dataloader_real)
 
-    # Fix valid
+    # Fix test samples
     with torch.no_grad():
+        dataset = ImageFolder(args.path_dataset_encoder, transform=prep)
+        dataloader = DataLoader(dataset, batch_size=args.size_batch, shuffle=False,
+                num_workers=8, drop_last=True)
+
+        dataset_val = ImageFolder(args.path_dataset_encoder_val, transform=prep)
+        dataloader_val = DataLoader(dataset_val, batch_size=args.size_batch, shuffle=False,
+                num_workers=8, drop_last=True)
+
         x_test_val, _ = next(iter(dataloader_val))
         x_test_val = transforms.Grayscale()(x_test_val)
 
@@ -285,13 +290,12 @@ def train(G, D, config, args, dev):
     dataloader = DataLoader(dataset, batch_size=args.size_batch, shuffle=True,
             num_workers=8, drop_last=True)
 
+
     num_iter = 0
     for epoch in range(args.num_epoch):
         for i, (x, _) in enumerate(tqdm(dataloader)):
-            num_iter += 1
             x = x.to(dev)
-            x_ = x.to(dev)
-            x_ = transforms.Grayscale()(x_)
+            x_gray = transforms.Grayscale()(x)
 
             # Sample z
             z = torch.zeros((args.size_batch, G.dim_z)).to(dev)
@@ -304,7 +308,7 @@ def train(G, D, config, args, dev):
             if args.loss_adv: 
                 for _ in range(args.num_dis):
                     # Infer f
-                    f = encoder(x_) # [batch, 1024, 16, 16]
+                    f = encoder(x_gray) # [batch, 1024, 16, 16]
                     fake = G.forward_from(z, G.shared(c), args.num_layer, f)
 
                     optimizer_d.zero_grad()
@@ -322,7 +326,7 @@ def train(G, D, config, args, dev):
                     optimizer_d.step()
 
             # Generator Loss 
-            f = encoder(x_) # [batch, 1024, 16, 16]
+            f = encoder(x_gray) # [batch, 1024, 16, 16]
             fake = G.forward_from(z, G.shared(c), args.num_layer, f)
 
             optimizer_g.zero_grad()
@@ -375,10 +379,12 @@ def train(G, D, config, args, dev):
                 if args.finetune_d:
                     name = 'D_%07d.ckpt' % num_iter 
                     path = join(path_ckpts, name) 
-                    torch.save(G.state_dict(), path) 
+                    torch.save(D.state_dict(), path) 
                 name = 'E_%07d.ckpt' % num_iter 
                 path = join(path_ckpts, name) 
-                torch.save(G.state_dict(), path) 
+                torch.save(encoder.state_dict(), path) 
+
+            num_iter += 1
 
 
 def main():
