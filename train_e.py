@@ -97,6 +97,8 @@ def parse_args():
     # loader
     parser.add_argument('--use_pretrained_g', default=True)
     parser.add_argument('--use_pretrained_d', default=True)
+    parser.add_argument('--real_target', default='sample',
+            choices=['sample', 'dataset'])
 
     # Loss
     parser.add_argument('--loss_mse', action='store_true', default=True)
@@ -252,10 +254,13 @@ def train(G, D, config, args, dev):
     dataloader_val = DataLoader(dataset_val, batch_size=args.size_batch, shuffle=False,
             num_workers=8, drop_last=True)
 
-    dataset_sampling = ImageFolder(args.path_sampling, transform=prep)
-    dataloader_sampling = DataLoader(dataset_sampling, batch_size=args.size_batch, shuffle=False,
+    if args.real_target == 'sample':
+        dataset_real = ImageFolder(args.path_sampling, transform=prep)
+    elif args.real_target == 'dataset':
+        dataset_real = ImageFolder(args.path_dataset_encoder, transform=prep)
+    dataloader_real = DataLoader(dataset_real, batch_size=args.size_batch, shuffle=False,
             num_workers=8, drop_last=True)
-    dataloader_sampling = get_inf_batch(dataloader_sampling)
+    dataloader_real = get_inf_batch(dataloader_real)
 
     # Fix valid
     with torch.no_grad():
@@ -304,11 +309,11 @@ def train(G, D, config, args, dev):
 
                     optimizer_d.zero_grad()
 
-                    x_sample, _ = dataloader_sampling.__next__()
-                    x_sample = x_sample.to(dev)
-                    x_rerange = (x_sample - 0.5) * 2
+                    x_real, _ = dataloader_real.__next__()
+                    x_real = x_real.to(dev)
+                    x_real = (x_real - 0.5) * 2
 
-                    critic_real, _ = D(x_rerange, c)
+                    critic_real, _ = D(x_real, c)
                     critic_fake, _ = D(fake, c)
                     d_loss_real, d_loss_fake = loss_hinge_dis(critic_fake, critic_real)
                     loss_d = (d_loss_real + d_loss_fake) / 2  
