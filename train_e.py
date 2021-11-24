@@ -125,7 +125,13 @@ class VGG16Perceptual():
     def __init__(self,
             resize=True,
             normalized_input=True,
-            dev='cuda'):
+            dev='cuda',
+            load_pickle=True):
+
+        if load_pickle:
+            import pickle 
+            with open('./vgg16.pickle', 'rb') as f:
+                self.model = pickle.load(f)
 
         self.model = torch.hub.load('pytorch/vision:v0.8.2', 'vgg16',
                 pretrained=True).to(dev).eval()
