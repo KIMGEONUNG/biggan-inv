@@ -1,61 +1,43 @@
 import os
 from skimage import color
-
-from torchvision.utils import make_grid
-
 import numpy as np
-import random
-
 from torch.utils.data import DataLoader
-from torchvision.datasets import ImageFolder
-
 import models
 from encoders import EncoderF_16
-
 import torch
-import torch.nn.functional as F 
-import torch.optim as optim
-from torch.autograd import Variable
-from torch.utils.data.dataloader import DataLoader 
-
 import pickle
 import argparse
 from torchvision.datasets import ImageFolder
 from torchvision.utils import make_grid
 import torchvision.transforms as transforms
-from torchvision.transforms import (ToPILImage, Compose, ToTensor,
-        Resize, CenterCrop)
+from torchvision.transforms import ToPILImage, ToTensor
 from tqdm import tqdm
 
 
 def parse():
     parser = argparse.ArgumentParser()
+
     parser.add_argument('--seed', type=int, default=2)
     # 5 --> 32, 4 --> 16, ...
+    parser.add_argument('--max_iter', default=100)
     parser.add_argument('--num_layer', default=2)
     parser.add_argument('--num_row', type=int, default=8)
-    parser.add_argument('--resolution', type=str, default='256')
     parser.add_argument('--class_index', type=int, default=15)
-    parser.add_argument('--num_iter', type=int, default=100)
-    parser.add_argument('--interval_save', type=int, default=3)
     parser.add_argument('--size_batch', type=int, default=8)
-    parser.add_argument('--truncation', type=float, default=1.0)
-    parser.add_argument('--show', action='store_false')
-
-    parser.add_argument("--lr", type=float, default=0.0002, help="adam: learning rate")
-    parser.add_argument("--b1", type=float, default=0.5, help="adam: decay of first order momentum of gradient")
-    parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
 
     # I/O
-    parser.add_argument('--path_dataset', type=str, default='dataset_val')
-    parser.add_argument('--path_ckpt', type=str, default='./encoder_f_16_v9.ckpt')
     parser.add_argument('--path_config', default='config.pickle')
-    parser.add_argument('--path_ckpt_g', default='./pretrained/G_ema_256.pth')
-    parser.add_argument('--path_dataset_encoder', default='./dataset_encoder/')
-    parser.add_argument('--path_dataset_encoder_val', default='./dataset_encoder_val/')
+    parser.add_argument('--path_ckpt_g', default='./ckpts/encoder_f_16_finetune_v1/G_0016200.ckpt')
+    parser.add_argument('--path_ckpt_e', default='./ckpts/encoder_f_16_finetune_v1/E_0016200.ckpt')
+    parser.add_argument('--path_output', default='./out_colorize')
+
+    parser.add_argument('--colorization_target', default='valid',
+            choices=['valid', 'train']
+            )
+    parser.add_argument('--path_dataset_encoder_train', default='./dataset_encoder/')
+    parser.add_argument('--path_dataset_encoder_valid', default='./dataset_encoder_val/')
 
     # Conversion
-    parser.add_argument('--gray_inv', action='store_true', default=True)
     parser.add_argument('--device', default='cuda:1')
 
     return parser.parse_args()
@@ -115,7 +97,7 @@ def main(args):
 
     # Load Encoder
     encoder = EncoderF_16(norm='instance').to(dev)
-    encoder.load_state_dict(torch.load(args.path_ckpt))
+    encoder.load_state_dict(torch.load(args.path_ckpt_e))
     encoder.eval()
 
     # Latents
@@ -128,10 +110,19 @@ def main(args):
                 transforms.Resize(256),
                 transforms.CenterCrop(256),
             ])
-    dataset = ImageFolder(args.path_dataset_encoder_val, transform=prep)
+
+    path_root = None
+    if args.colorization_target  == 'train':
+        path_root = args.path_dataset_encoder_train
+    elif args.colorization_target  == 'valid':
+        path_root = args.path_dataset_encoder_valid
+
+    dataset = ImageFolder(path_root, transform=prep)
     dataloader  = DataLoader(dataset, batch_size=args.size_batch, shuffle=False,
             num_workers=8, drop_last=True)
-
+    
+    if not os.path.exists(args.out_colorize):
+        os.mkdir(args.out_colorize)
 
     with torch.no_grad():
         for i, (x, _) in enumerate(tqdm(dataloader)):
@@ -151,18 +142,17 @@ def main(args):
             output = output.add(1).div(2)
             grid_out = make_grid(output, nrow=args.num_row)
 
-            #LAB
+            # LAB
             labs = fusion(x_gt.detach().cpu(), output.detach().cpu())
             grid_lab = make_grid(labs, nrow=args.num_row).to(dev)
 
             grid = torch.cat([grid_gt, grid_gray, grid_out, grid_lab], dim=-2)
             im = ToPILImage()(grid)
 
-            path_dir = 'validation_f_16'
-            if not os.path.exists(path_dir):
-                os.mkdir(path_dir)
+            im.save('./%s/%03d.jpg' % (args.out_colorize, i))
 
-            im.save('./%s/%03d.jpg' % (path_dir, i))
+            if i > args.max_iter:
+                break
 
 if __name__ == '__main__':
     args = parse()
