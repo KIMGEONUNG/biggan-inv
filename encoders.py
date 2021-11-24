@@ -10,7 +10,8 @@ class ConvBlock(nn.Module):
             is_down=False,
             dropout=0.2,
             norm='batch', 
-            activation='relu'):
+            activation='relu', 
+            **kwargs):
         super().__init__()
 
         blocks = []
@@ -31,7 +32,7 @@ class ConvBlock(nn.Module):
         elif norm == 'instance':
             blocks.append(nn.InstanceNorm2d(ch_out))
         elif norm == 'layer':
-            blocks.append(nn.InstanceNorm2d(ch_out))
+            blocks.append(nn.LayerNorm(kwargs['shape']))
 
         # Nonlinearity 
         if activation == 'relu':
@@ -50,9 +51,10 @@ class ConvBlock(nn.Module):
     def forward(self, x):
         return self.conv_block(x)
 
-
+# Obsolete for implementation bug
 class EncoderF_16(nn.Module):
     """
+    input feature: [batch, 3, 256, 256]
     Target feature: [batch, 768, 16, 16]
     """
     def __init__(self, ch_in=1, ch_out=768, ch_unit=96, norm='batch'):
@@ -60,21 +62,83 @@ class EncoderF_16(nn.Module):
         self.net = nn.Sequential(
                 ConvBlock(ch_in, ch_unit * 1),
                 #  96 x 256 x 256
-                ConvBlock(ch_unit * 1, ch_unit * 1, is_down=False, norm=norm),
-                ConvBlock(ch_unit * 1, ch_unit * 1, is_down=False, norm=norm),
-                ConvBlock(ch_unit * 1, ch_unit * 2, is_down=True, norm=norm),
+                ConvBlock(ch_unit * 1, ch_unit * 1, is_down=False,
+                    norm=norm),
+                ConvBlock(ch_unit * 1, ch_unit * 1, is_down=False,
+                    norm=norm),
+                ConvBlock(ch_unit * 1, ch_unit * 2, is_down=True,
+                    norm=norm),
                 #  192 x 128 x 128 
-                ConvBlock(ch_unit * 2, ch_unit * 2, is_down=False, norm=norm),
-                ConvBlock(ch_unit * 2, ch_unit * 2, is_down=False, norm=norm),
-                ConvBlock(ch_unit * 2, ch_unit * 4, is_down=True, norm=norm),
+                ConvBlock(ch_unit * 2, ch_unit * 2, is_down=False,
+                    norm=norm),
+                ConvBlock(ch_unit * 2, ch_unit * 2, is_down=False,
+                    norm=norm),
+                ConvBlock(ch_unit * 2, ch_unit * 4, is_down=True,
+                    norm=norm),
                 #  384 x 64 x 64 
-                ConvBlock(ch_unit * 4, ch_unit * 4, is_down=False, norm=norm),
-                ConvBlock(ch_unit * 4, ch_unit * 4, is_down=False, norm=norm),
-                ConvBlock(ch_unit * 4, ch_unit * 8, is_down=True, norm=norm),
+                ConvBlock(ch_unit * 4, ch_unit * 4, is_down=False,
+                    norm=norm),
+                ConvBlock(ch_unit * 4, ch_unit * 4, is_down=False,
+                    norm=norm),
+                ConvBlock(ch_unit * 4, ch_unit * 8, is_down=True,
+                    norm=norm),
                 #  768 x 32 x 32 
-                ConvBlock(ch_unit * 8, ch_unit * 8, is_down=False, norm=norm),
-                ConvBlock(ch_unit * 8, ch_unit * 8, is_down=False, norm=norm),
-                ConvBlock(ch_unit * 8, ch_unit * 8, is_down=True, norm=norm),
+                ConvBlock(ch_unit * 8, ch_unit * 8, is_down=False,
+                    norm=norm),
+                ConvBlock(ch_unit * 8, ch_unit * 8, is_down=False,
+                    norm=norm),
+                ConvBlock(ch_unit * 8, ch_unit * 8, is_down=True,
+                    norm=norm),
+                #  768 x 16 x 16 
+
+                nn.Conv2d(ch_unit * 8, ch_unit * 8, 
+                    kernel_size=3, 
+                    stride=1, 
+                    padding=1)
+                )
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class EncoderF_16(nn.Module):
+    """
+    input feature: [batch, 3, 256, 256]
+    Target feature: [batch, 768, 16, 16]
+    """
+    def __init__(self, ch_in=1, ch_out=768, ch_unit=96, norm='batch'):
+        super().__init__()
+        self.net = nn.Sequential(
+                ConvBlock(ch_in, ch_unit * 1, is_down=False,
+                    norm=norm, shape=(96, 256, 256)),
+                #  96 x 256 x 256
+                ConvBlock(ch_unit * 1, ch_unit * 1, is_down=False,
+                    norm=norm, shape=(96, 256, 256)),
+                ConvBlock(ch_unit * 1, ch_unit * 1, is_down=False,
+                    norm=norm, shape=(96, 256, 256)),
+                ConvBlock(ch_unit * 1, ch_unit * 2, is_down=True,
+                    norm=norm, shape=(192, 128, 128)),
+                #  192 x 128 x 128 
+                ConvBlock(ch_unit * 2, ch_unit * 2, is_down=False,
+                    norm=norm, shape=(192, 128, 128)),
+                ConvBlock(ch_unit * 2, ch_unit * 2, is_down=False,
+                    norm=norm, shape=(192, 128, 128)),
+                ConvBlock(ch_unit * 2, ch_unit * 4, is_down=True,
+                    norm=norm, shape=(384, 64, 64)),
+                #  384 x 64 x 64 
+                ConvBlock(ch_unit * 4, ch_unit * 4, is_down=False,
+                    norm=norm, shape=(384, 64, 64)),
+                ConvBlock(ch_unit * 4, ch_unit * 4, is_down=False,
+                    norm=norm, shape=(384, 64, 64)),
+                ConvBlock(ch_unit * 4, ch_unit * 8, is_down=True,
+                    norm=norm, shape=(768, 32, 32)),
+                #  768 x 32 x 32 
+                ConvBlock(ch_unit * 8, ch_unit * 8, is_down=False,
+                    norm=norm, shape=(768, 32, 32)),
+                ConvBlock(ch_unit * 8, ch_unit * 8, is_down=False,
+                    norm=norm, shape=(768, 32, 32)),
+                ConvBlock(ch_unit * 8, ch_unit * 8, is_down=True,
+                    norm=norm, shape=(768, 16, 16)),
                 #  768 x 16 x 16 
 
                 nn.Conv2d(ch_unit * 8, ch_unit * 8, 

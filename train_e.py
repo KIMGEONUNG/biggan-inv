@@ -43,7 +43,7 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='encoder_f_16_finetune_v1')
+    parser.add_argument('--task_name', default='encoder_f_16_finetune_v2')
     parser.add_argument('--detail', 
         default='fix the bug')
 
@@ -51,7 +51,7 @@ def parse_args():
     parser.add_argument('--mode', default='train', 
             choices=['sampling', 'critic', 'wip', 'train'])
     
-    parser.add_argument('--norm_type', default='instance', 
+    parser.add_argument('--norm_type', default='layer', 
             choices=['instance', 'batch', 'layer'])
 
     # IO
@@ -93,6 +93,7 @@ def parse_args():
     parser.add_argument('--print_config', default=False)
     parser.add_argument('--print_generator', default=True)
     parser.add_argument('--print_discriminator', default=True)
+    parser.add_argument('--print_encoder', default=True)
 
     # loader
     parser.add_argument('--use_pretrained_g', default=True)
@@ -234,6 +235,8 @@ def train(G, D, config, args, dev):
     # Models 
     vgg_per = VGG16Perceptual()
     encoder = EncoderF_16(norm=args.norm_type).to(dev)
+    if args.print_encoder:
+        print(encoder)
 
     # Optimizer
     params = list(encoder.parameters())

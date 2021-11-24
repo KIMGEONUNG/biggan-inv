@@ -121,8 +121,8 @@ def main(args):
     dataloader  = DataLoader(dataset, batch_size=args.size_batch, shuffle=False,
             num_workers=8, drop_last=True)
     
-    if not os.path.exists(args.out_colorize):
-        os.mkdir(args.out_colorize)
+    if not os.path.exists(args.path_output):
+        os.mkdir(args.path_output)
 
     with torch.no_grad():
         for i, (x, _) in enumerate(tqdm(dataloader)):
@@ -149,7 +149,7 @@ def main(args):
             grid = torch.cat([grid_gt, grid_gray, grid_out, grid_lab], dim=-2)
             im = ToPILImage()(grid)
 
-            im.save('./%s/%03d.jpg' % (args.out_colorize, i))
+            im.save('./%s/%03d.jpg' % (args.path_output, i))
 
             if i > args.max_iter:
                 break
