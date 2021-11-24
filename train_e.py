@@ -131,10 +131,10 @@ class VGG16Perceptual():
         if load_pickle:
             import pickle 
             with open('./vgg16.pickle', 'rb') as f:
-                self.model = pickle.load(f)
-
-        self.model = torch.hub.load('pytorch/vision:v0.8.2', 'vgg16',
-                pretrained=True).to(dev).eval()
+                self.model = pickle.load(f).to(dev).eval()
+        else:
+            self.model = torch.hub.load('pytorch/vision:v0.8.2', 'vgg16',
+                    pretrained=True).to(dev).eval()
 
         self.normalized_intput = normalized_input
         self.dev = dev
