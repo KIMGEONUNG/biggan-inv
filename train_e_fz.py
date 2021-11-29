@@ -1,7 +1,7 @@
 import os
 from os.path import join, exists
 import models
-from encoders import EncoderF_16
+from encoders import EncoderF_16, EncoderZ
 
 from torch.utils.tensorboard import SummaryWriter
 import torch
@@ -43,8 +43,8 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='encoder_f_16_finetune_v2')
-    parser.add_argument('--detail', 
+    parser.add_argument('--task_name', default='encoder_fz_16_finetune_v1')
+    parser.add_argument('--with z encoder', 
         default='fix the bug')
 
     # Mode
@@ -104,12 +104,14 @@ def parse_args():
     # Loss
     parser.add_argument('--loss_mse', action='store_true', default=True)
     parser.add_argument('--loss_lpips', action='store_true', default=True)
+    parser.add_argument('--loss_reg', action='store_true', default=True)
     parser.add_argument('--loss_adv', action='store_true', default=True)
 
     # Loss coef
     parser.add_argument('--coef_mse', type=float, default=1.0)
     parser.add_argument('--coef_lpips', type=float, default=0.1)
     parser.add_argument('--coef_adv', type=float, default=0.03)
+    parser.add_argument('--coef_reg', type=float, default=0.0125)
 
     # Others
     parser.add_argument('--seed', type=int, default=42)
@@ -240,12 +242,18 @@ def train(G, D, config, args, dev):
 
     # Models 
     vgg_per = VGG16Perceptual()
-    encoder = EncoderF_16(norm=args.norm_type).to(dev)
+    encoder_f = EncoderF_16(norm=args.norm_type).to(dev)
+    encoder_z = EncoderZ(ch_out=G.dim_z, norm=args.norm_type).to(dev)
+    encoder_f.train()
+    encoder_z.train()
+
     if args.print_encoder:
-        print(encoder)
+        print(encoder_f)
+        print(encoder_z)
 
     # Optimizer
-    params = list(encoder.parameters())
+    params = list(encoder_f.parameters())
+    params += list(encoder_z.parameters())
     if args.finetune_g:
         params += list(G.parameters())
     optimizer_g = optim.Adam(params,
@@ -291,8 +299,6 @@ def train(G, D, config, args, dev):
         c_test = G.shared(c_test)
 
         x_test = transforms.Grayscale()(x_test)
-        z_test = torch.zeros((args.size_batch, G.dim_z)).to(dev)
-        z_test.normal_(mean=0, std=0.8)
 
 
     dataset = ImageFolder(args.path_dataset_encoder, transform=prep)
@@ -306,10 +312,6 @@ def train(G, D, config, args, dev):
             x = x.to(dev)
             x_gray = transforms.Grayscale()(x)
 
-            # Sample z
-            z = torch.zeros((args.size_batch, G.dim_z)).to(dev)
-            z.normal_(mean=0, std=0.8)
-
             c = torch.ones(args.size_batch) * args.class_index
             c = c.to(dev).long()
 
@@ -317,7 +319,8 @@ def train(G, D, config, args, dev):
             if args.loss_adv: 
                 for _ in range(args.num_dis):
                     # Infer f
-                    f = encoder(x_gray) # [batch, 1024, 16, 16]
+                    f = encoder_f(x_gray) # [batch, 1024, 16, 16]
+                    z = encoder_z(x_gray) # [batch, 1024, 16, 16]
                     fake = G.forward_from(z, G.shared(c), args.num_layer, f)
 
                     optimizer_d.zero_grad()
@@ -335,7 +338,8 @@ def train(G, D, config, args, dev):
                     optimizer_d.step()
 
             # Generator Loss 
-            f = encoder(x_gray) # [batch, 1024, 16, 16]
+            f = encoder_f(x_gray) # [batch, 1024, 16, 16]
+            z = encoder_z(x_gray) # [batch, 1024, 16, 16]
             fake = G.forward_from(z, G.shared(c), args.num_layer, f)
 
             optimizer_g.zero_grad()
@@ -347,10 +351,15 @@ def train(G, D, config, args, dev):
             fake = fake.add(1).div(2)
             if args.loss_mse:
                 loss_mse = args.coef_mse * nn.MSELoss()(x, fake)
-                loss_mse.backward(retain_graph=True)
+                # loss_mse.backward(retain_graph=True)
             if args.loss_lpips:
                 loss_lpips = args.coef_lpips * vgg_per.perceptual_loss(x, fake)
-                loss_lpips.backward()
+                # loss_lpips.backward(retain_graph=True)
+            if args.loss_reg:
+                loss_reg = z.norm(2) * 0.5 * args.coef_reg
+                # loss_reg.backward()
+            loss = loss_mse + loss_lpips + loss_reg
+            loss.backward()
 
             optimizer_g.step()
 
@@ -364,7 +373,8 @@ def train(G, D, config, args, dev):
 
             if num_iter % args.interval_save_train == 0:
                 with torch.no_grad():
-                    f = encoder(x_test.to(dev))
+                    f = encoder_f(x_test.to(dev))
+                    z_test = encoder_z(x_test.to(dev))
                     output = G.forward_from(z_test, c_test, args.num_layer, f)
                     output = output.add(1).div(2)
                     grid = make_grid(output, nrow=4)
@@ -373,7 +383,8 @@ def train(G, D, config, args, dev):
 
             if num_iter % args.interval_save_test == 0:
                 with torch.no_grad():
-                    f = encoder(x_test_val.to(dev))
+                    f = encoder_f(x_test_val.to(dev))
+                    z_text = encoder_z(x_test_val.to(dev))
                     output = G.forward_from(z_test, c_test, args.num_layer, f)
                     output = output.add(1).div(2)
                     grid = make_grid(output, nrow=4)
@@ -389,9 +400,12 @@ def train(G, D, config, args, dev):
                     name = 'D_%07d.ckpt' % num_iter 
                     path = join(path_ckpts, name) 
                     torch.save(D.state_dict(), path) 
-                name = 'E_%07d.ckpt' % num_iter 
+                name = 'EF_%07d.ckpt' % num_iter 
                 path = join(path_ckpts, name) 
-                torch.save(encoder.state_dict(), path) 
+                torch.save(encoder_f.state_dict(), path) 
+                name = 'EZ_%07d.ckpt' % num_iter 
+                path = join(path_ckpts, name) 
+                torch.save(encoder_z.state_dict(), path) 
 
             num_iter += 1
 

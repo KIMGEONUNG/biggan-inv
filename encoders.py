@@ -51,54 +51,56 @@ class ConvBlock(nn.Module):
     def forward(self, x):
         return self.conv_block(x)
 
-# Obsolete for implementation bug
-class EncoderF_16(nn.Module):
+class EncoderZ(nn.Module):
     """
     input feature: [batch, 3, 256, 256]
     Target feature: [batch, 768, 16, 16]
     """
-    def __init__(self, ch_in=1, ch_out=768, ch_unit=96, norm='batch'):
+    def __init__(self, ch_in=1, ch_out=119, ch_unit=96, norm='batch'):
         super().__init__()
-        self.net = nn.Sequential(
-                ConvBlock(ch_in, ch_unit * 1),
+        self.cnn = nn.Sequential(
+                ConvBlock(ch_in, ch_unit * 1, is_down=False,
+                    norm=norm, shape=(96, 256, 256)),
                 #  96 x 256 x 256
-                ConvBlock(ch_unit * 1, ch_unit * 1, is_down=False,
-                    norm=norm),
-                ConvBlock(ch_unit * 1, ch_unit * 1, is_down=False,
-                    norm=norm),
+
                 ConvBlock(ch_unit * 1, ch_unit * 2, is_down=True,
-                    norm=norm),
+                    norm=norm, shape=(192, 128, 128)),
                 #  192 x 128 x 128 
-                ConvBlock(ch_unit * 2, ch_unit * 2, is_down=False,
-                    norm=norm),
-                ConvBlock(ch_unit * 2, ch_unit * 2, is_down=False,
-                    norm=norm),
+
                 ConvBlock(ch_unit * 2, ch_unit * 4, is_down=True,
-                    norm=norm),
+                    norm=norm, shape=(384, 64, 64)),
                 #  384 x 64 x 64 
-                ConvBlock(ch_unit * 4, ch_unit * 4, is_down=False,
-                    norm=norm),
-                ConvBlock(ch_unit * 4, ch_unit * 4, is_down=False,
-                    norm=norm),
+
                 ConvBlock(ch_unit * 4, ch_unit * 8, is_down=True,
-                    norm=norm),
+                    norm=norm, shape=(768, 32, 32)),
                 #  768 x 32 x 32 
-                ConvBlock(ch_unit * 8, ch_unit * 8, is_down=False,
-                    norm=norm),
-                ConvBlock(ch_unit * 8, ch_unit * 8, is_down=False,
-                    norm=norm),
+
                 ConvBlock(ch_unit * 8, ch_unit * 8, is_down=True,
-                    norm=norm),
+                    norm=norm, shape=(768, 16, 16)),
                 #  768 x 16 x 16 
 
-                nn.Conv2d(ch_unit * 8, ch_unit * 8, 
-                    kernel_size=3, 
-                    stride=1, 
-                    padding=1)
+                ConvBlock(ch_unit * 8, ch_unit * 8, is_down=True,
+                    norm=norm, shape=(768, 8, 8)),
+                #  768 x 16 x 16 
+
+                ConvBlock(ch_unit * 8, ch_unit * 8, is_down=True,
+                    norm=norm, shape=(768, 4, 4)),
+                #  768 x 16 x 16 
+
+                ConvBlock(ch_unit * 8, ch_unit * 8, is_down=True,
+                    norm=norm, shape=(768, 2, 2)),
+                #  768 x 16 x 16 
+
+                ConvBlock(ch_unit * 8, ch_unit * 8, is_down=True,
+                    norm=norm, shape=(768, 1, 1)),
+                #  768 x 16 x 16 
                 )
+        self.mlp = nn.Linear(ch_unit * 8, ch_out)
 
     def forward(self, x):
-        return self.net(x)
+        x = self.cnn(x)
+        x = self.mlp(x.view(x.size()[0], -1))
+        return x
 
 
 class EncoderF_16(nn.Module):
