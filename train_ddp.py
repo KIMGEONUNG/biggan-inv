@@ -20,6 +20,10 @@ from torchvision.transforms import (ToPILImage, Compose, ToTensor,
         Resize, CenterCrop)
 from tqdm import tqdm
 
+import torch.distributed as dist
+import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
+
 """
 # Dimension infos
     z: ([8, 17])
@@ -246,6 +250,46 @@ class EGD(nn.Module):
         raise
 
 
+def run_demo(demo_fn, world_size):
+    mp.spawn(demo_fn,
+             args=(world_size,),
+             nprocs=world_size,
+             join=True)
+
+
+def setup(rank, world_size):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
+
+    # initialize the process group
+    dist.init_process_group("gloo", rank=rank, world_size=world_size)
+
+
+def cleanup():
+    dist.destroy_process_group()
+
+
+def demo_basic(rank, world_size):
+    setup(rank, world_size)
+
+    # create model and move it to GPU with id rank
+    model = ToyModel().to(rank)
+    ddp_model = DDP(model, device_ids=[rank])
+
+    loss_fn = nn.MSELoss()
+    optimizer = optim.SGD(ddp_model.parameters(), lr=0.001)
+
+    optimizer.zero_grad()
+    outputs = ddp_model(torch.randn(20, 10))
+    labels = torch.randn(20, 5).to(rank)
+    loss_fn(outputs, labels).backward()
+    optimizer.step()
+
+    cleanup()
+
+    print('here')
+
+
 def main():
     args = parse_args()
 
@@ -333,14 +377,13 @@ def main():
         writer.flush()
 
     dataloader_g = DataLoader(dataset, batch_size=args.size_batch, 
-            shuffle=True, num_workers=4, drop_last=True)
+            shuffle=True, num_workers=1, drop_last=True)
 
     dataloader_d = DataLoader(dataset, batch_size=args.size_batch, 
-            shuffle=True, num_workers=4, drop_last=True)
+            shuffle=True, num_workers=1, drop_last=True)
     dataloader_d = get_inf_batch(dataloader_d)
 
 
-    # torch.backends.cudnn.enabled = False
     model = nn.DataParallel(model)
     num_iter = 0
     for epoch in range(args.num_epoch):
@@ -425,4 +468,9 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    # main()
+    n_gpus = torch.cuda.device_count()
+    assert n_gpus >= 2, f"Requires at least 2 GPUs to run, but got {n_gpus}"
+    world_size = n_gpus
+    run_demo(demo_basic, world_size)
+
