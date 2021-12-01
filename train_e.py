@@ -1,4 +1,6 @@
 import os
+import numpy as np
+from skimage import color
 from os.path import join, exists
 import models
 from encoders import EncoderF_16
@@ -10,6 +12,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
 from torch.utils.data.dataloader import DataLoader 
+from torch.utils.data import Subset 
 
 import pickle
 import argparse
@@ -43,30 +46,31 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='encoder_f_16_finetune_v2')
-    parser.add_argument('--detail', 
-        default='fix the bug')
+    parser.add_argument('--task_name', default='test4')
+    parser.add_argument('--detail', default='train eval seperation')
 
     # Mode
-    parser.add_argument('--mode', default='train', 
-            choices=['sampling', 'critic', 'wip', 'train'])
-    
-    parser.add_argument('--norm_type', default='layer', 
+    parser.add_argument('--use_z_encoder', default=True)
+
+    parser.add_argument('--norm_type', default='instance', 
             choices=['instance', 'batch', 'layer'])
 
     # IO
+    parser.add_argument('--path_log', default='runs_test')
     parser.add_argument('--path_ckpts', default='ckpts')
     parser.add_argument('--path_config', default='config.pickle')
     parser.add_argument('--path_ckpt_g', default='./pretrained/G_ema_256.pth')
     parser.add_argument('--path_ckpt_d', default='./pretrained/D_256.pth')
     parser.add_argument('--path_imgnet_train', default='./imgnet/train')
     parser.add_argument('--path_imgnet_val', default='./imgnet/val')
-    parser.add_argument('--path_sampling', default='./sampling')
-    
+
+    parser.add_argument('--index_target',
+            # type=int, nargs='+', default=[11,14,15])
+            type=int, nargs='+', default=[15])
+    parser.add_argument('--num_worker', default=8)
+    parser.add_argument('--iter_sample', default=4)
+
     # Encoder Traning
-    parser.add_argument('--path_dataset_encoder', default='./dataset_encoder/')
-    parser.add_argument('--path_dataset_encoder_val', default='./dataset_encoder_val/')
-    parser.add_argument('--class_index', default=15)
     parser.add_argument('--num_layer', default=2)
     parser.add_argument('--num_epoch', default=400)
     parser.add_argument('--interval_save_loss', default=4)
@@ -79,7 +83,6 @@ def parse_args():
 
     # Discriminator Options
     parser.add_argument('--num_dis', default=1)
-    parser.add_argument('--use_sampling_reality', default=True)
 
     # Optimizer
     parser.add_argument("--lr", type=float, default=0.0001)
@@ -98,8 +101,6 @@ def parse_args():
     # loader
     parser.add_argument('--use_pretrained_g', default=True)
     parser.add_argument('--use_pretrained_d', default=True)
-    parser.add_argument('--real_target', default='dataset',
-            choices=['sample', 'dataset'])
 
     # Loss
     parser.add_argument('--loss_mse', action='store_true', default=True)
@@ -201,7 +202,84 @@ def get_inf_batch(loader):
             yield x
 
 
-def train(G, D, config, args, dev):
+def extract(dataset, target_ids):
+    '''
+    extract data element based on class index
+    '''
+    indices =  []
+    for i in range(len(dataset.targets)):
+        if dataset.targets[i] in target_ids:
+            indices.append(i)
+    return Subset(dataset, indices)
+
+
+def prepare_dataset(
+        path_train,
+        path_valid,
+        index_target,
+        prep=transforms.Compose([
+            ToTensor(),
+            transforms.Resize(256),
+            transforms.CenterCrop(256),
+            ])):
+
+
+    dataset = ImageFolder(path_train, transform=prep)
+    dataset = extract(dataset, index_target)
+
+    dataset_val = ImageFolder(path_valid, transform=prep)
+    dataset_val = extract(dataset_val, index_target)
+    return dataset, dataset_val
+
+
+def extract_sample(dataset, size_batch, num_iter, is_shuffle):
+    dataloader = DataLoader(dataset, batch_size=size_batch,
+            shuffle=is_shuffle, num_workers=4,
+            drop_last=True)
+    xs = []
+    xgs = []
+    cs = []
+    for i, (x, c) in enumerate(dataloader):
+        if i >= num_iter:
+            break
+        xg = transforms.Grayscale()(x)
+        xs.append(x), cs.append(c), xgs.append(xg)
+    return {'xs': xs, 'cs': cs, 'xs_gray': xgs}
+
+
+def lab_fusion(x_l, x_ab):
+    labs = []
+    for img_gt, img_hat in zip(x_l, x_ab):
+
+        img_gt = img_gt.permute(1, 2, 0)
+        img_hat = img_hat.permute(1, 2, 0)
+
+        img_gt = color.rgb2lab(img_gt)
+        img_hat = color.rgb2lab(img_hat)
+        
+        l = img_gt[:, :, :1]
+        ab = img_hat[:, :, 1:]
+        img_fusion = np.concatenate((l, ab), axis=-1)
+        img_fusion = color.lab2rgb(img_fusion)
+        img_fusion = torch.from_numpy(img_fusion)
+        img_fusion = img_fusion.permute(2, 0, 1)
+        labs.append(img_fusion)
+    labs = torch.stack(labs)
+     
+    return labs
+
+
+def make_grid_multi(xs, nrow=4):
+    return make_grid(torch.cat(xs, dim=0), nrow=nrow)
+
+
+def train(G, D, config, args, dev,
+            dataset=None,
+            sample_train=None,
+            sample_valid=None,
+            writer=None,
+            path_ckpts=None,
+        ):
     # Make Eval
     if(args.finetune_g):
         print("# GENERATOR FINETUNE")
@@ -217,26 +295,6 @@ def train(G, D, config, args, dev):
         print("# DISCRIMINATOR FIX")
         D.eval().to(dev)
 
-    print(args)
-    if args.seed >= 0:
-        set_seed(args.seed)
-
-    # Make directory for checkpoints    
-    if not exists(args.path_ckpts):
-        os.mkdir(args.path_ckpts)
-    path_ckpts = join(args.path_ckpts, args.task_name)
-    if not exists(path_ckpts):
-        os.mkdir(path_ckpts)
-       
-    # Save arguments
-    with open(join(path_ckpts, 'args.pkl'), 'wb') as f:
-        pickle.dump(args, f)
-
-    # Logger
-    path_log = 'runs_finetune/' + args.task_name
-    writer = SummaryWriter(path_log)
-    writer.add_text('config', str(args))
-    print('logger name:', path_log)
 
     # Models 
     vgg_per = VGG16Perceptual()
@@ -254,64 +312,26 @@ def train(G, D, config, args, dev):
             lr=args.lr_d, betas=(args.b1_d, args.b2_d))
 
     # Datasets
-    prep = transforms.Compose([
-            ToTensor(),
-            transforms.Resize(256),
-            transforms.CenterCrop(256),
-            ])
-
-    if args.real_target == 'sample':
-        dataset_real = ImageFolder(args.path_sampling, transform=prep)
-    elif args.real_target == 'dataset':
-        dataset_real = ImageFolder(args.path_dataset_encoder, transform=prep)
-    dataloader_real = DataLoader(dataset_real, batch_size=args.size_batch, shuffle=False,
-            num_workers=8, drop_last=True)
+    dataloader_real = DataLoader(dataset, batch_size=args.size_batch, shuffle=True,
+            num_workers=args.num_worker, drop_last=True)
     dataloader_real = get_inf_batch(dataloader_real)
-
-    # Fix test samples
-    with torch.no_grad():
-        dataset = ImageFolder(args.path_dataset_encoder, transform=prep)
-        dataloader = DataLoader(dataset, batch_size=args.size_batch, shuffle=False,
-                num_workers=8, drop_last=True)
-
-        dataset_val = ImageFolder(args.path_dataset_encoder_val, transform=prep)
-        dataloader_val = DataLoader(dataset_val, batch_size=args.size_batch, shuffle=False,
-                num_workers=8, drop_last=True)
-
-        x_test_val, _ = next(iter(dataloader_val))
-        x_test_val = transforms.Grayscale()(x_test_val)
-
-        x_test, _ = next(iter(dataloader))
-        grid_init = make_grid(x_test, nrow=4)
-        writer.add_image('GT', grid_init)
-        writer.flush()
-
-        c_test = torch.ones(args.size_batch) * args.class_index
-        c_test = c_test.to(dev).long()
-        c_test = G.shared(c_test)
-
-        x_test = transforms.Grayscale()(x_test)
-        z_test = torch.zeros((args.size_batch, G.dim_z)).to(dev)
-        z_test.normal_(mean=0, std=0.8)
-
-
-    dataset = ImageFolder(args.path_dataset_encoder, transform=prep)
     dataloader = DataLoader(dataset, batch_size=args.size_batch, shuffle=True,
-            num_workers=8, drop_last=True)
-
+            num_workers=args.num_worker, drop_last=True)
 
     num_iter = 0
     for epoch in range(args.num_epoch):
-        for i, (x, _) in enumerate(tqdm(dataloader)):
+        for i, (x, c) in enumerate(tqdm(dataloader)):
+            G.train()
+            encoder.train()
+
             x = x.to(dev)
+            c = c.to(dev)
             x_gray = transforms.Grayscale()(x)
 
             # Sample z
             z = torch.zeros((args.size_batch, G.dim_z)).to(dev)
             z.normal_(mean=0, std=0.8)
 
-            c = torch.ones(args.size_batch) * args.class_index
-            c = c.to(dev).long()
 
             # Discriminator Loss
             if args.loss_adv: 
@@ -363,22 +383,65 @@ def train(G, D, config, args, dev):
                         {'G': loss_g.item(), 'D': loss_d.item()}, num_iter)
 
             if num_iter % args.interval_save_train == 0:
+                G.eval()
+                encoder.eval()
+
+                outputs_rgb = []
+                outputs_fusion = []
                 with torch.no_grad():
-                    f = encoder(x_test.to(dev))
-                    output = G.forward_from(z_test, c_test, args.num_layer, f)
-                    output = output.add(1).div(2)
-                    grid = make_grid(output, nrow=4)
-                    writer.add_image('recon_train', grid, num_iter)
-                    writer.flush()
+                    for id_sample in range(len(sample_valid['xs'])):
+                        z = torch.zeros((args.size_batch, G.dim_z))
+                        z.normal_(mean=0, std=0.8)
+                        x_gt = sample_train['xs'][id_sample]
+
+                        x = sample_train['xs_gray'][id_sample]
+                        c = sample_train['cs'][id_sample]
+                        z, x, c = z.to(dev), x.to(dev), c.to(dev)
+
+                        f = encoder(x)
+                        output = G.forward_from(z, G.shared(c), args.num_layer, f)
+                        output = output.add(1).div(2).detach().cpu()
+                        output_fusion = lab_fusion(x_gt, output)
+                        outputs_rgb.append(output)
+                        outputs_fusion.append(output_fusion)
+
+                grid = make_grid_multi(outputs_rgb, nrow=4)
+                writer.add_image('recon_train_rgb', grid, num_iter)
+
+                grid = make_grid_multi(outputs_fusion, nrow=4)
+                writer.add_image('recon_train_fusion', grid, num_iter)
+
+                writer.flush()
 
             if num_iter % args.interval_save_test == 0:
+                G.eval()
+                encoder.eval()
+                outputs_rgb = []
+                outputs_fusion = []
                 with torch.no_grad():
-                    f = encoder(x_test_val.to(dev))
-                    output = G.forward_from(z_test, c_test, args.num_layer, f)
-                    output = output.add(1).div(2)
-                    grid = make_grid(output, nrow=4)
-                    writer.add_image('recon_val', grid, num_iter)
-                    writer.flush()
+                    for id_sample in range(len(sample_valid['xs'])):
+                        z = torch.zeros((args.size_batch, G.dim_z))
+                        z.normal_(mean=0, std=0.8)
+                        x_gt = sample_valid['xs'][id_sample]
+
+                        x = sample_valid['xs_gray'][id_sample]
+                        c = sample_valid['cs'][id_sample]
+                        z, x, c = z.to(dev), x.to(dev), c.to(dev)
+
+                        f = encoder(x)
+                        output = G.forward_from(z, G.shared(c), args.num_layer, f)
+                        output = output.add(1).div(2).detach().cpu()
+                        output_fusion = lab_fusion(x_gt, output)
+                        outputs_rgb.append(output)
+                        outputs_fusion.append(output_fusion)
+
+                grid = make_grid_multi(outputs_rgb, nrow=4)
+                writer.add_image('recon_valid_rgb', grid, num_iter)
+
+                grid = make_grid_multi(outputs_fusion, nrow=4)
+                writer.add_image('recon_valid_fusion', grid, num_iter)
+
+                writer.flush()
 
             if num_iter % args.interval_save_ckpt == 0:
                 if args.finetune_g:
@@ -420,7 +483,55 @@ def main():
         print("#@ LOAD PRETRAINED DISCRIMINATOR")
         D.load_state_dict(torch.load(args.path_ckpt_d), strict=False)
 
-    train(G, D, config, args, dev)
+    if args.seed >= 0:
+        set_seed(args.seed)
+
+    # Make directory for checkpoints    
+    if not exists(args.path_ckpts):
+        os.mkdir(args.path_ckpts)
+    path_ckpts = join(args.path_ckpts, args.task_name)
+    if not exists(path_ckpts):
+        os.mkdir(path_ckpts)
+       
+    # Save arguments
+    with open(join(path_ckpts, 'args.pkl'), 'wb') as f:
+        pickle.dump(args, f)
+
+    # Logger
+    path_log = join(args.path_log, args.task_name)
+    writer = SummaryWriter(path_log)
+    writer.add_text('config', str(args))
+    print('logger name:', path_log)
+    prep = transforms.Compose([
+            ToTensor(),
+            transforms.Resize(256),
+            transforms.CenterCrop(256),
+            ])
+
+    # DATASETS
+    dataset, dataset_val = prepare_dataset(
+            args.path_imgnet_train,
+            args.path_imgnet_val,
+            args.index_target,
+            prep=prep)
+
+    is_shuffle = False 
+    sample_train = extract_sample(dataset, args.size_batch, args.iter_sample, is_shuffle)
+    sample_valid = extract_sample(dataset_val, args.size_batch, args.iter_sample, is_shuffle)
+
+    grid_init = make_grid_multi(sample_train['xs'], nrow=4)
+    writer.add_image('GT_train', grid_init)
+    grid_init = make_grid_multi(sample_valid['xs'], nrow=4)
+    writer.add_image('GT_valid', grid_init)
+    writer.flush()
+
+    train(G, D, config, args, dev, 
+            dataset=dataset,
+            sample_train=sample_train,
+            sample_valid=sample_valid,
+            writer=writer,
+            path_ckpts=path_ckpts,
+            )
 
 
 if __name__ == '__main__':
