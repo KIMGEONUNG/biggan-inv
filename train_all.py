@@ -341,7 +341,7 @@ def main():
 
 
     # torch.backends.cudnn.enabled = False
-    model = nn.DataParallel(model)
+    # model = nn.DataParallel(model)
     num_iter = 0
     for epoch in range(args.num_epoch):
         for i, (x, c) in enumerate(tqdm(dataloader_g)):
@@ -401,7 +401,7 @@ def main():
             if num_iter % args.interval_save_train == 0:
                 with torch.no_grad():
                     model.eval()
-                    output, _, _ = model(x_test_gray, c_test)
+                    output, _, _ = model(x_test_gray.cuda(), c_test.cuda())
                     output = output.add(1).div(2)
                     grid = make_grid(output, nrow=4)
                     writer.add_image('recon_train', grid, num_iter)
@@ -410,7 +410,7 @@ def main():
             if num_iter % args.interval_save_test == 0:
                 with torch.no_grad():
                     model.eval()
-                    output, _, _ = model(x_test_val_gray, c_test_val)
+                    output, _, _ = model(x_test_val_gray.cuda(), c_test_val.cuda())
                     output = output.add(1).div(2)
                     grid = make_grid(output, nrow=4)
                     writer.add_image('recon_val', grid, num_iter)
