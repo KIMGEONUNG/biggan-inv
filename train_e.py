@@ -53,7 +53,7 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='test7')
+    parser.add_argument('--task_name', default='test9')
     parser.add_argument('--detail', default='multi gpu')
 
     # Mode
@@ -120,11 +120,12 @@ def parse_args():
     parser.add_argument('--coef_adv', type=float, default=0.03)
 
     # Others
+    parser.add_argument('--dim_z', type=int, default=119)
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--size_batch', default=8)
+    parser.add_argument('--size_batch', default=4)
     parser.add_argument('--w_class', default=False)
     parser.add_argument('--device', default='cuda:0')
-    parser.add_argument('--multi_gpu', default=False)
+    parser.add_argument('--multi_gpu', default=True)
 
     return parser.parse_args()
 
@@ -289,46 +290,55 @@ def setup_dist(rank, world_size):
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
 
 
+class Colorizer(nn.Module):
+    def __init__(self, config, path_ckpt_g, norm_type,
+            id_mid_layer =2):
+        super().__init__()
+        self.id_mid_layer = id_mid_layer  
+        self.E = EncoderF_16(norm=norm_type)
+        self.G = models.Generator(**config)
+        self.G.load_state_dict(torch.load(path_ckpt_g), strict=False)
+
+    def forward(self, x_gray, c, z):
+        f = self.E(x_gray) 
+        output = self.G.forward_from(z, self.G.shared(c), 
+                self.id_mid_layer, f)
+        return output
+
+
 def train(dev, world_size, config, args,
             dataset=None,
             sample_train=None,
             sample_valid=None,
-            writer=None,
             path_ckpts=None,
+            path_log=None,
         ):
+    writer = SummaryWriter(path_log)
     use_multi_gpu = world_size > 1
 
     if use_multi_gpu:
         setup_dist(dev, world_size)
 
     # Setup model
-    G = models.Generator(**config)
+    EG = Colorizer(config, args.path_ckpt_g, args.norm_type,
+            id_mid_layer=args.num_layer)
+    EG.train()
+
     D = models.Discriminator(**config)
     D.train()
-    E = EncoderF_16(norm=args.norm_type)
-    # Load pretrained Generator and Discriminator
-    if args.use_pretrained_g:
-        G.load_state_dict(torch.load(args.path_ckpt_g), strict=False)
     if args.use_pretrained_d:
         D.load_state_dict(torch.load(args.path_ckpt_d), strict=False)
 
     # Load model
     vgg_per = VGG16Perceptual(dev=dev)
-
+    EG = EG.to(dev)
+    D = D.to(dev)
     if use_multi_gpu:
-        G = DDP(G, device_ids=[dev])
-        D = DDP(D, device_ids=[dev])
-        E = DDP(E, device_ids=[dev])
-    else:
-        G = G.to(dev)
-        D = D.to(dev)
-        E = E.to(dev)
+        EG = DDP(EG, device_ids=[dev], find_unused_parameters=True)
+        D = DDP(D, device_ids=[dev], find_unused_parameters=True)
 
     # Optimizer
-    params = list(E.parameters())
-    if args.finetune_g:
-        params += list(G.parameters())
-    optimizer_g = optim.Adam(params,
+    optimizer_g = optim.Adam(EG.parameters(),
             lr=args.lr, betas=(args.b1, args.b2))
     optimizer_d = optim.Adam(D.parameters(),
             lr=args.lr_d, betas=(args.b1_d, args.b2_d))
@@ -355,24 +365,21 @@ def train(dev, world_size, config, args,
         if use_multi_gpu:
             sampler.set_epoch(epoch)
         for i, (x, c) in enumerate(tqdm(dataloader)):
-            if args.finetune_g:
-                G.train()
-            E.train()
+            EG.train()
 
             x = x.to(dev)
             c = c.to(dev)
             x_gray = transforms.Grayscale()(x)
 
             # Sample z
-            z = torch.zeros((args.size_batch, G.dim_z)).to(dev)
+            z = torch.zeros((args.size_batch, args.dim_z)).to(dev)
             z.normal_(mean=0, std=0.8)
 
             # Discriminator Loss
             if args.loss_adv: 
                 for _ in range(args.num_dis):
-                    # Infer f
-                    f = E(x_gray) # [batch, 1024, 16, 16]
-                    fake = G.forward_from(z, G.shared(c), args.num_layer, f)
+                    with torch.no_grad():
+                        fake = EG(x_gray, c, z)
 
                     optimizer_d.zero_grad()
 
@@ -389,8 +396,7 @@ def train(dev, world_size, config, args,
                     optimizer_d.step()
 
             # Generator Loss 
-            f = E(x_gray) # [batch, 1024, 16, 16]
-            fake = G.forward_from(z, G.shared(c), args.num_layer, f)
+            fake = EG(x_gray, c, z)
 
             optimizer_g.zero_grad()
             if args.loss_adv:
@@ -412,37 +418,32 @@ def train(dev, world_size, config, args,
             condition = dev == 0 if use_multi_gpu else True
             if num_iter % args.interval_save_loss == 0 and condition:
                 make_log_scalar(writer, num_iter, loss_mse, loss_lpips, loss_d, loss_g)
+
             if num_iter % args.interval_save_train == 0 and condition:
-                make_log_img(G, E, writer, args, sample_train,
+                make_log_img(EG, args.dim_z, writer, args, sample_train,
                         dev, num_iter, 'train')
             if num_iter % args.interval_save_test == 0 and condition:
-                make_log_img(G, E, writer, args, sample_valid,
+                make_log_img(EG, args.dim_z, writer, args, sample_valid,
                         dev, num_iter, 'valid')
             if num_iter % args.interval_save_ckpt == 0 and condition:
-                make_log_ckpt(G, D, E, args, num_iter, path_ckpts, use_multi_gpu)
                 if use_multi_gpu:
-                    dist.barrier()
+                    make_log_ckpt(EG.module, D.module,
+                            args, num_iter, path_ckpts)
+                else:
+                    make_log_ckpt(EG, D, args, num_iter, path_ckpts)
 
             num_iter += 1
 
 
-def make_log_ckpt(G, D, E, args, num_iter, path_ckpts, is_ddp):
-    if is_ddp:
-        G = G.module
-        D = D.module
-        E = E.module
+def make_log_ckpt(EG, D, args, num_iter, path_ckpts):
 
-    if args.finetune_g:
-        name = 'G_%07d.ckpt' % num_iter 
-        path = join(path_ckpts, name) 
-        torch.save(G.state_dict(), path) 
-    if args.finetune_d:
-        name = 'D_%07d.ckpt' % num_iter 
-        path = join(path_ckpts, name) 
-        torch.save(D.state_dict(), path) 
-    name = 'E_%07d.ckpt' % num_iter 
+    name = 'D_%07d.ckpt' % num_iter 
     path = join(path_ckpts, name) 
-    torch.save(E.state_dict(), path) 
+    torch.save(D.state_dict(), path) 
+
+    name = 'EG_%07d.ckpt' % num_iter 
+    path = join(path_ckpts, name) 
+    torch.save(EG.state_dict(), path) 
 
 
 def make_log_scalar(writer, num_iter, loss_mse, loss_lpips, loss_d, loss_g):
@@ -452,15 +453,14 @@ def make_log_scalar(writer, num_iter, loss_mse, loss_lpips, loss_d, loss_g):
         {'G': loss_g.item(), 'D': loss_d.item()}, num_iter)
 
 
-def make_log_img(G, E, writer, args, sample, dev, num_iter, name):
-    G.eval()
-    E.eval()
+def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name):
+    EG.eval()
 
     outputs_rgb = []
     outputs_fusion = []
     with torch.no_grad():
         for id_sample in range(len(sample['xs'])):
-            z = torch.zeros((args.size_batch, G.dim_z))
+            z = torch.zeros((args.size_batch, dim_z))
             z.normal_(mean=0, std=0.8)
             x_gt = sample['xs'][id_sample]
 
@@ -468,8 +468,7 @@ def make_log_img(G, E, writer, args, sample, dev, num_iter, name):
             c = sample['cs'][id_sample]
             z, x, c = z.to(dev), x.to(dev), c.to(dev)
 
-            f = E(x)
-            output = G.forward_from(z, G.shared(c), args.num_layer, f)
+            output = EG(x, c, z)
             output = output.add(1).div(2).detach().cpu()
             output_fusion = lab_fusion(x_gt, output)
             outputs_rgb.append(output)
@@ -552,21 +551,20 @@ def main():
     grid_init = make_grid_multi(sample_valid['xs'], nrow=4)
     writer.add_image('GT_valid', grid_init)
     writer.flush()
+    writer.close()
 
     if use_multi_gpu:
         print('Use Multi_GPU')
-        mp.spawn(
-            fn=train,
-            args=(num_gpu, config, args, dataset, 
-                sample_train, sample_valid, writer, path_ckpts),
+        mp.spawn(train,
+            args=(num_gpu, config, args, dataset, sample_train, sample_valid, path_ckpts, path_log),
             nprocs=num_gpu)
     else:
         train(dev, 1, config, args, 
                 dataset=dataset,
                 sample_train=sample_train,
                 sample_valid=sample_valid,
-                writer=writer,
                 path_ckpts=path_ckpts,
+                path_log=path_log
                 )
 
 
