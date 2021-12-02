@@ -41,10 +41,13 @@ def parse():
 
     # User Input 
     parser.add_argument('--index_target',
-            type=int, nargs='+', default=[11, 15])
+            type=int, nargs='+', default=[11, 14, 15])
     parser.add_argument('--index_force',
-            type=int, default=14)
-
+            type=int, default=None)
+            # type=int, default=14)
+    parser.add_argument('--color_jitter', type=int, default=1)
+    parser.add_argument('--z_sample_scheme', type=str, 
+            default='sample', choices=['sample', 'zero', 'one'])
     parser.add_argument('--colorization_target', default='valid',
             choices=['valid', 'train']
             )
@@ -141,37 +144,48 @@ def main(args):
         os.mkdir(args.path_output)
 
     with torch.no_grad():
+        num_iter = 0
         for i, (x, c) in enumerate(tqdm(dataloader)):
-            x, c = x.to(dev), c.to(dev)
-            x_gray = transforms.Grayscale()(x)
+            for _ in range(args.color_jitter):
+                x, c = x.to(dev), c.to(dev)
+                x_gray = transforms.Grayscale()(x)
 
-            # Sample z
-            z = torch.zeros((args.size_batch, G.dim_z)).to(dev)
-            z.normal_(mean=0, std=0.8)
+                # Sample z
+                if args.z_sample_scheme == 'sample':
+                    z = torch.zeros((args.size_batch, G.dim_z)).to(dev)
+                    z.normal_(mean=0, std=0.8)
+                elif args.z_sample_scheme == 'zero': 
+                    z = torch.zeros((args.size_batch, G.dim_z)).to(dev)
+                elif args.z_sample_scheme == 'one': 
+                    z = torch.ones((args.size_batch, G.dim_z)).to(dev)
+                else:
+                    raise Exception('Invalid z sample scheme')
 
-            # Force Index
-            if args.index_force is not None:
-                c = ((c / c) * args.index_force).long()
+
+                # Force Index
+                if args.index_force is not None:
+                    c = ((c / c) * args.index_force).long()
 
 
-            f = encoder(x_gray) # [batch, 1024, 16, 16]
-            output = G.forward_from(z, G.shared(c), args.num_layer, f)
-            output = output.add(1).div(2)
+                f = encoder(x_gray) # [batch, 1024, 16, 16]
+                output = G.forward_from(z, G.shared(c), args.num_layer, f)
+                output = output.add(1).div(2)
 
-            # LAB
-            labs = fusion(x.detach().cpu(), output.detach().cpu())
+                # LAB
+                labs = fusion(x.detach().cpu(), output.detach().cpu())
 
-            # Save Result
-            grid_gt = make_grid(x, nrow=args.num_row)
-            grid_gray = make_grid(x_gray, nrow=args.num_row)
-            grid_out = make_grid(output, nrow=args.num_row)
-            grid_lab = make_grid(labs, nrow=args.num_row).to(dev)
-            grid = torch.cat([grid_gt, grid_gray, grid_out, grid_lab], dim=-2)
-            im = ToPILImage()(grid)
-            im.save('./%s/%03d.jpg' % (args.path_output, i))
+                # Save Result
+                grid_gt = make_grid(x, nrow=args.num_row)
+                grid_gray = make_grid(x_gray, nrow=args.num_row)
+                grid_out = make_grid(output, nrow=args.num_row)
+                grid_lab = make_grid(labs, nrow=args.num_row).to(dev)
+                grid = torch.cat([grid_gt, grid_gray, grid_out, grid_lab], dim=-2)
+                im = ToPILImage()(grid)
+                im.save('./%s/%03d.jpg' % (args.path_output, num_iter))
 
-            if i > args.max_iter:
-                break
+                num_iter += 1
+                if i > args.max_iter:
+                    break
 
 if __name__ == '__main__':
     args = parse()
