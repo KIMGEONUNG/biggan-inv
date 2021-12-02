@@ -46,8 +46,8 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='test4')
-    parser.add_argument('--detail', default='train eval seperation')
+    parser.add_argument('--task_name', default='test5')
+    parser.add_argument('--detail', default='multi class')
 
     # Mode
     parser.add_argument('--use_z_encoder', default=True)
@@ -65,8 +65,8 @@ def parse_args():
     parser.add_argument('--path_imgnet_val', default='./imgnet/val')
 
     parser.add_argument('--index_target',
-            # type=int, nargs='+', default=[11,14,15])
-            type=int, nargs='+', default=[15])
+            type=int, nargs='+', default=[11,14,15])
+            # type=int, nargs='+', default=[15])
     parser.add_argument('--num_worker', default=8)
     parser.add_argument('--iter_sample', default=4)
 
@@ -515,7 +515,7 @@ def main():
             args.index_target,
             prep=prep)
 
-    is_shuffle = False 
+    is_shuffle = True 
     sample_train = extract_sample(dataset, args.size_batch, args.iter_sample, is_shuffle)
     sample_valid = extract_sample(dataset_val, args.size_batch, args.iter_sample, is_shuffle)
 
