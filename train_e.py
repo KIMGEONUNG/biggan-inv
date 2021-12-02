@@ -46,7 +46,7 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='test5')
+    parser.add_argument('--task_name', default='test6')
     parser.add_argument('--detail', default='multi class')
 
     # Mode
@@ -65,8 +65,8 @@ def parse_args():
     parser.add_argument('--path_imgnet_val', default='./imgnet/val')
 
     parser.add_argument('--index_target',
-            type=int, nargs='+', default=[11,14,15])
-            # type=int, nargs='+', default=[15])
+            # type=int, nargs='+', default=[11,14,15])
+            type=int, nargs='+', default=[15])
     parser.add_argument('--num_worker', default=8)
     parser.add_argument('--iter_sample', default=4)
 
@@ -376,87 +376,73 @@ def train(G, D, config, args, dev,
 
             # Logger
             if num_iter % args.interval_save_loss == 0:
-                writer.add_scalar('mse', loss_mse.item(), num_iter)
-                writer.add_scalar('lpips', loss_lpips.item(), num_iter)
-                if args.loss_adv:
-                    writer.add_scalars('GAN loss', 
-                        {'G': loss_g.item(), 'D': loss_d.item()}, num_iter)
+                make_log_scalar(writer, num_iter, loss_mse, loss_lpips, loss_d, loss_g)
 
             if num_iter % args.interval_save_train == 0:
-                G.eval()
-                encoder.eval()
-
-                outputs_rgb = []
-                outputs_fusion = []
-                with torch.no_grad():
-                    for id_sample in range(len(sample_valid['xs'])):
-                        z = torch.zeros((args.size_batch, G.dim_z))
-                        z.normal_(mean=0, std=0.8)
-                        x_gt = sample_train['xs'][id_sample]
-
-                        x = sample_train['xs_gray'][id_sample]
-                        c = sample_train['cs'][id_sample]
-                        z, x, c = z.to(dev), x.to(dev), c.to(dev)
-
-                        f = encoder(x)
-                        output = G.forward_from(z, G.shared(c), args.num_layer, f)
-                        output = output.add(1).div(2).detach().cpu()
-                        output_fusion = lab_fusion(x_gt, output)
-                        outputs_rgb.append(output)
-                        outputs_fusion.append(output_fusion)
-
-                grid = make_grid_multi(outputs_rgb, nrow=4)
-                writer.add_image('recon_train_rgb', grid, num_iter)
-
-                grid = make_grid_multi(outputs_fusion, nrow=4)
-                writer.add_image('recon_train_fusion', grid, num_iter)
-
-                writer.flush()
-
+                make_log_img(G, encoder, writer, args, sample_train,
+                        dev, num_iter, 'train')
             if num_iter % args.interval_save_test == 0:
-                G.eval()
-                encoder.eval()
-                outputs_rgb = []
-                outputs_fusion = []
-                with torch.no_grad():
-                    for id_sample in range(len(sample_valid['xs'])):
-                        z = torch.zeros((args.size_batch, G.dim_z))
-                        z.normal_(mean=0, std=0.8)
-                        x_gt = sample_valid['xs'][id_sample]
-
-                        x = sample_valid['xs_gray'][id_sample]
-                        c = sample_valid['cs'][id_sample]
-                        z, x, c = z.to(dev), x.to(dev), c.to(dev)
-
-                        f = encoder(x)
-                        output = G.forward_from(z, G.shared(c), args.num_layer, f)
-                        output = output.add(1).div(2).detach().cpu()
-                        output_fusion = lab_fusion(x_gt, output)
-                        outputs_rgb.append(output)
-                        outputs_fusion.append(output_fusion)
-
-                grid = make_grid_multi(outputs_rgb, nrow=4)
-                writer.add_image('recon_valid_rgb', grid, num_iter)
-
-                grid = make_grid_multi(outputs_fusion, nrow=4)
-                writer.add_image('recon_valid_fusion', grid, num_iter)
-
-                writer.flush()
-
+                make_log_img(G, encoder, writer, args, sample_valid,
+                        dev, num_iter, 'valid')
             if num_iter % args.interval_save_ckpt == 0:
-                if args.finetune_g:
-                    name = 'G_%07d.ckpt' % num_iter 
-                    path = join(path_ckpts, name) 
-                    torch.save(G.state_dict(), path) 
-                if args.finetune_d:
-                    name = 'D_%07d.ckpt' % num_iter 
-                    path = join(path_ckpts, name) 
-                    torch.save(D.state_dict(), path) 
-                name = 'E_%07d.ckpt' % num_iter 
-                path = join(path_ckpts, name) 
-                torch.save(encoder.state_dict(), path) 
+                make_log_ckpt(G, D, encoder, args, num_iter, path_ckpts)
 
             num_iter += 1
+
+
+def make_log_ckpt(G, D, E, args, num_iter, path_ckpts):
+    if args.finetune_g:
+        name = 'G_%07d.ckpt' % num_iter 
+        path = join(path_ckpts, name) 
+        torch.save(G.state_dict(), path) 
+    if args.finetune_d:
+        name = 'D_%07d.ckpt' % num_iter 
+        path = join(path_ckpts, name) 
+        torch.save(D.state_dict(), path) 
+    name = 'E_%07d.ckpt' % num_iter 
+    path = join(path_ckpts, name) 
+    torch.save(E.state_dict(), path) 
+
+
+def make_log_scalar(writer, num_iter, loss_mse, loss_lpips, loss_d, loss_g):
+    writer.add_scalar('mse', loss_mse.item(), num_iter)
+    writer.add_scalar('lpips', loss_lpips.item(), num_iter)
+    writer.add_scalars('GAN loss', 
+        {'G': loss_g.item(), 'D': loss_d.item()}, num_iter)
+
+
+def make_log_img(G, E, writer, args, sample, dev, num_iter, name):
+    G.eval()
+    E.eval()
+
+    outputs_rgb = []
+    outputs_fusion = []
+    with torch.no_grad():
+        for id_sample in range(len(sample['xs'])):
+            z = torch.zeros((args.size_batch, G.dim_z))
+            z.normal_(mean=0, std=0.8)
+            x_gt = sample['xs'][id_sample]
+
+            x = sample['xs_gray'][id_sample]
+            c = sample['cs'][id_sample]
+            z, x, c = z.to(dev), x.to(dev), c.to(dev)
+
+            f = E(x)
+            output = G.forward_from(z, G.shared(c), args.num_layer, f)
+            output = output.add(1).div(2).detach().cpu()
+            output_fusion = lab_fusion(x_gt, output)
+            outputs_rgb.append(output)
+            outputs_fusion.append(output_fusion)
+
+    grid = make_grid_multi(outputs_rgb, nrow=4)
+    writer.add_image('recon_%s_rgb' % name, 
+            grid, num_iter)
+
+    grid = make_grid_multi(outputs_fusion, nrow=4)
+    writer.add_image('recon_%s_fusion' % name, 
+            grid, num_iter)
+
+    writer.flush()
 
 
 def main():
