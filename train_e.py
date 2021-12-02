@@ -13,6 +13,7 @@ import torch.optim as optim
 from torch.autograd import Variable
 from torch.utils.data.dataloader import DataLoader 
 from torch.utils.data import Subset 
+from torch.utils.data.distributed import DistributedSampler
 
 import pickle
 import argparse
@@ -22,6 +23,12 @@ import torchvision.transforms as transforms
 from torchvision.transforms import (ToPILImage, Compose, ToTensor,
         Resize, CenterCrop)
 from tqdm import tqdm
+
+
+import torch.multiprocessing as mp
+import torch.distributed as dist 
+from torch.nn.parallel import DistributedDataParallel as DDP
+
 
 """
 # Dimension infos
@@ -46,8 +53,8 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='test6')
-    parser.add_argument('--detail', default='multi class')
+    parser.add_argument('--task_name', default='test7')
+    parser.add_argument('--detail', default='multi gpu')
 
     # Mode
     parser.add_argument('--use_z_encoder', default=True)
@@ -117,6 +124,7 @@ def parse_args():
     parser.add_argument('--size_batch', default=8)
     parser.add_argument('--w_class', default=False)
     parser.add_argument('--device', default='cuda:0')
+    parser.add_argument('--multi_gpu', default=False)
 
     return parser.parse_args()
 
@@ -273,37 +281,51 @@ def make_grid_multi(xs, nrow=4):
     return make_grid(torch.cat(xs, dim=0), nrow=nrow)
 
 
-def train(G, D, config, args, dev,
+def setup_dist(rank, world_size):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
+
+    # initialize the process group
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+
+
+def train(dev, world_size, config, args,
             dataset=None,
             sample_train=None,
             sample_valid=None,
             writer=None,
             path_ckpts=None,
         ):
-    # Make Eval
-    if(args.finetune_g):
-        print("# GENERATOR FINETUNE")
-        G.train().to(dev)
+    use_multi_gpu = world_size > 1
+
+    if use_multi_gpu:
+        setup_dist(dev, world_size)
+
+    # Setup model
+    G = models.Generator(**config)
+    D = models.Discriminator(**config)
+    D.train()
+    E = EncoderF_16(norm=args.norm_type)
+    # Load pretrained Generator and Discriminator
+    if args.use_pretrained_g:
+        G.load_state_dict(torch.load(args.path_ckpt_g), strict=False)
+    if args.use_pretrained_d:
+        D.load_state_dict(torch.load(args.path_ckpt_d), strict=False)
+
+    # Load model
+    vgg_per = VGG16Perceptual(dev=dev)
+
+    if use_multi_gpu:
+        G = DDP(G, device_ids=[dev])
+        D = DDP(D, device_ids=[dev])
+        E = DDP(E, device_ids=[dev])
     else:
-        print("# GENERATOR FIX")
-        G.eval().to(dev)
-
-    if(args.finetune_d):
-        print("# DISCRIMINATOR FINETUNE")
-        D.train().to(dev)
-    else:
-        print("# DISCRIMINATOR FIX")
-        D.eval().to(dev)
-
-
-    # Models 
-    vgg_per = VGG16Perceptual()
-    encoder = EncoderF_16(norm=args.norm_type).to(dev)
-    if args.print_encoder:
-        print(encoder)
+        G = G.to(dev)
+        D = D.to(dev)
+        E = E.to(dev)
 
     # Optimizer
-    params = list(encoder.parameters())
+    params = list(E.parameters())
     if args.finetune_g:
         params += list(G.parameters())
     optimizer_g = optim.Adam(params,
@@ -312,17 +334,30 @@ def train(G, D, config, args, dev,
             lr=args.lr_d, betas=(args.b1_d, args.b2_d))
 
     # Datasets
-    dataloader_real = DataLoader(dataset, batch_size=args.size_batch, shuffle=True,
+    sampler, sampler_real = None, None
+    if use_multi_gpu:
+        sampler = DistributedSampler(dataset)
+        sampler_real = DistributedSampler(dataset)
+
+    dataloader_real = DataLoader(dataset, batch_size=args.size_batch, 
+            shuffle=True if sampler_real is None else False, 
+            sampler=sampler_real,
             num_workers=args.num_worker, drop_last=True)
     dataloader_real = get_inf_batch(dataloader_real)
-    dataloader = DataLoader(dataset, batch_size=args.size_batch, shuffle=True,
+
+    dataloader = DataLoader(dataset, batch_size=args.size_batch, 
+            shuffle=True if sampler is None else False, 
+            sampler=sampler,
             num_workers=args.num_worker, drop_last=True)
 
     num_iter = 0
     for epoch in range(args.num_epoch):
+        if use_multi_gpu:
+            sampler.set_epoch(epoch)
         for i, (x, c) in enumerate(tqdm(dataloader)):
-            G.train()
-            encoder.train()
+            if args.finetune_g:
+                G.train()
+            E.train()
 
             x = x.to(dev)
             c = c.to(dev)
@@ -332,12 +367,11 @@ def train(G, D, config, args, dev,
             z = torch.zeros((args.size_batch, G.dim_z)).to(dev)
             z.normal_(mean=0, std=0.8)
 
-
             # Discriminator Loss
             if args.loss_adv: 
                 for _ in range(args.num_dis):
                     # Infer f
-                    f = encoder(x_gray) # [batch, 1024, 16, 16]
+                    f = E(x_gray) # [batch, 1024, 16, 16]
                     fake = G.forward_from(z, G.shared(c), args.num_layer, f)
 
                     optimizer_d.zero_grad()
@@ -355,7 +389,7 @@ def train(G, D, config, args, dev,
                     optimizer_d.step()
 
             # Generator Loss 
-            f = encoder(x_gray) # [batch, 1024, 16, 16]
+            f = E(x_gray) # [batch, 1024, 16, 16]
             fake = G.forward_from(z, G.shared(c), args.num_layer, f)
 
             optimizer_g.zero_grad()
@@ -375,22 +409,29 @@ def train(G, D, config, args, dev,
             optimizer_g.step()
 
             # Logger
-            if num_iter % args.interval_save_loss == 0:
+            condition = dev == 0 if use_multi_gpu else True
+            if num_iter % args.interval_save_loss == 0 and condition:
                 make_log_scalar(writer, num_iter, loss_mse, loss_lpips, loss_d, loss_g)
-
-            if num_iter % args.interval_save_train == 0:
-                make_log_img(G, encoder, writer, args, sample_train,
+            if num_iter % args.interval_save_train == 0 and condition:
+                make_log_img(G, E, writer, args, sample_train,
                         dev, num_iter, 'train')
-            if num_iter % args.interval_save_test == 0:
-                make_log_img(G, encoder, writer, args, sample_valid,
+            if num_iter % args.interval_save_test == 0 and condition:
+                make_log_img(G, E, writer, args, sample_valid,
                         dev, num_iter, 'valid')
-            if num_iter % args.interval_save_ckpt == 0:
-                make_log_ckpt(G, D, encoder, args, num_iter, path_ckpts)
+            if num_iter % args.interval_save_ckpt == 0 and condition:
+                make_log_ckpt(G, D, E, args, num_iter, path_ckpts, use_multi_gpu)
+                if use_multi_gpu:
+                    dist.barrier()
 
             num_iter += 1
 
 
-def make_log_ckpt(G, D, E, args, num_iter, path_ckpts):
+def make_log_ckpt(G, D, E, args, num_iter, path_ckpts, is_ddp):
+    if is_ddp:
+        G = G.module
+        D = D.module
+        E = E.module
+
     if args.finetune_g:
         name = 'G_%07d.ckpt' % num_iter 
         path = join(path_ckpts, name) 
@@ -447,7 +488,20 @@ def make_log_img(G, E, writer, args, sample, dev, num_iter, name):
 
 def main():
     args = parse_args()
-    dev = args.device 
+
+    # GPU OPTIONS
+    use_multi_gpu = False
+    num_gpu = torch.cuda.device_count()
+    if num_gpu == 0:
+        raise Exception('No available GPU')
+    elif num_gpu == 1 or args.multi_gpu == False:
+        dev = args.device 
+        print('Use single GPU:', dev)
+    elif num_gpu > 1 and args.multi_gpu == True:
+        use_multi_gpu = True 
+        print('Use multi GPU: %02d EA' % num_gpu)
+    else:
+        raise Exception('Invalid GPU setting')
 
     # Load Configuratuion
     with open(args.path_config, 'rb') as f:
@@ -456,18 +510,6 @@ def main():
     if args.print_config:
         for i in config:
             print(i, ':', config[i])
-
-    # Load model
-    G = models.Generator(**config)
-    D = models.Discriminator(**config)
-
-    # Load ckpt
-    if args.use_pretrained_g:
-        print("#@ LOAD PRETRAINED GENERATOR")
-        G.load_state_dict(torch.load(args.path_ckpt_g), strict=False)
-    if args.use_pretrained_d:
-        print("#@ LOAD PRETRAINED DISCRIMINATOR")
-        D.load_state_dict(torch.load(args.path_ckpt_d), strict=False)
 
     if args.seed >= 0:
         set_seed(args.seed)
@@ -511,13 +553,21 @@ def main():
     writer.add_image('GT_valid', grid_init)
     writer.flush()
 
-    train(G, D, config, args, dev, 
-            dataset=dataset,
-            sample_train=sample_train,
-            sample_valid=sample_valid,
-            writer=writer,
-            path_ckpts=path_ckpts,
-            )
+    if use_multi_gpu:
+        print('Use Multi_GPU')
+        mp.spawn(
+            fn=train,
+            args=(num_gpu, config, args, dataset, 
+                sample_train, sample_valid, writer, path_ckpts),
+            nprocs=num_gpu)
+    else:
+        train(dev, 1, config, args, 
+                dataset=dataset,
+                sample_train=sample_train,
+                sample_valid=sample_valid,
+                writer=writer,
+                path_ckpts=path_ckpts,
+                )
 
 
 if __name__ == '__main__':
