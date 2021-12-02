@@ -122,7 +122,7 @@ def parse_args():
     # Others
     parser.add_argument('--dim_z', type=int, default=119)
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--size_batch', default=4)
+    parser.add_argument('--size_batch', default=8)
     parser.add_argument('--w_class', default=False)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--multi_gpu', default=True)
@@ -543,6 +543,9 @@ def main():
             prep=prep)
 
     is_shuffle = True 
+
+    if use_multi_gpu:
+        args.size_batch = int(args.size_batch / num_gpu)
     sample_train = extract_sample(dataset, args.size_batch, args.iter_sample, is_shuffle)
     sample_valid = extract_sample(dataset_val, args.size_batch, args.iter_sample, is_shuffle)
 
