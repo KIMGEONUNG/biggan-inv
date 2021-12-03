@@ -125,7 +125,7 @@ def parse_args():
     parser.add_argument('--size_batch', default=8)
     parser.add_argument('--w_class', default=False)
     parser.add_argument('--device', default='cuda:0')
-    parser.add_argument('--multi_gpu', default=True)
+    parser.add_argument('--multi_gpu', default=False)
 
     return parser.parse_args()
 
@@ -432,6 +432,7 @@ def train(dev, world_size, config, args,
                 else:
                     make_log_ckpt(EG, D, args, num_iter, path_ckpts)
 
+            # dist.barrier()
             num_iter += 1
 
 
