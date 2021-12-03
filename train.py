@@ -53,7 +53,7 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='test9')
+    parser.add_argument('--task_name', default='s_test2')
     parser.add_argument('--detail', default='multi gpu')
 
     # Mode
@@ -130,24 +130,23 @@ def parse_args():
     return parser.parse_args()
 
 
-class VGG16Perceptual():
+class VGG16Perceptual(nn.Module):
 
     def __init__(self,
             resize=True,
             normalized_input=True,
-            dev='cuda',
             load_pickle=True):
+        super().__init__()
 
         if load_pickle:
             import pickle 
             with open('./vgg16.pickle', 'rb') as f:
-                self.model = pickle.load(f).to(dev).eval()
+                self.model = pickle.load(f).eval()
         else:
             self.model = torch.hub.load('pytorch/vision:v0.8.2', 'vgg16',
-                    pretrained=True).to(dev).eval()
+                    pretrained=True).eval()
 
         self.normalized_intput = normalized_input
-        self.dev = dev
         self.idx_targets = [1, 2, 13, 20]
 
         preprocess = []
@@ -170,7 +169,8 @@ class VGG16Perceptual():
 
         return feats
 
-    def perceptual_loss(self, x1, x2):
+
+    def forward(self, x1, x2):
         x1_feats = self.preprocess(x1)
         x2_feats = self.preprocess(x2)
 
@@ -313,11 +313,16 @@ def train(dev, world_size, config, args,
             path_ckpts=None,
             path_log=None,
         ):
-    writer = SummaryWriter(path_log)
     use_multi_gpu = world_size > 1
 
+    
+    writer = None
     if use_multi_gpu:
         setup_dist(dev, world_size)
+        if dev == 0:
+            writer = SummaryWriter(path_log)
+    else:
+        writer = SummaryWriter(path_log)
 
     # Setup model
     EG = Colorizer(config, args.path_ckpt_g, args.norm_type,
@@ -330,12 +335,13 @@ def train(dev, world_size, config, args,
         D.load_state_dict(torch.load(args.path_ckpt_d), strict=False)
 
     # Load model
-    vgg_per = VGG16Perceptual(dev=dev)
+    vgg_per = VGG16Perceptual().to(dev)
     EG = EG.to(dev)
     D = D.to(dev)
     if use_multi_gpu:
         EG = DDP(EG, device_ids=[dev], find_unused_parameters=True)
         D = DDP(D, device_ids=[dev], find_unused_parameters=True)
+        vgg_per = DDP(vgg_per, device_ids=[dev], find_unused_parameters=True)
 
     # Optimizer
     optimizer_g = optim.Adam(EG.parameters(),
@@ -409,7 +415,7 @@ def train(dev, world_size, config, args,
                 loss_mse = args.coef_mse * nn.MSELoss()(x, fake)
                 loss_mse.backward(retain_graph=True)
             if args.loss_lpips:
-                loss_lpips = args.coef_lpips * vgg_per.perceptual_loss(x, fake)
+                loss_lpips = args.coef_lpips * vgg_per(x, fake)
                 loss_lpips.backward()
 
             optimizer_g.step()
@@ -418,7 +424,6 @@ def train(dev, world_size, config, args,
             condition = dev == 0 if use_multi_gpu else True
             if num_iter % args.interval_save_loss == 0 and condition:
                 make_log_scalar(writer, num_iter, loss_mse, loss_lpips, loss_d, loss_g)
-
             if num_iter % args.interval_save_train == 0 and condition:
                 make_log_img(EG, args.dim_z, writer, args, sample_train,
                         dev, num_iter, 'train')
@@ -432,7 +437,6 @@ def train(dev, world_size, config, args,
                 else:
                     make_log_ckpt(EG, D, args, num_iter, path_ckpts)
 
-            # dist.barrier()
             num_iter += 1
 
 
