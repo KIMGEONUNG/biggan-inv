@@ -53,12 +53,10 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='s_test2')
+    parser.add_argument('--task_name', default='m_test5')
     parser.add_argument('--detail', default='multi gpu')
 
     # Mode
-    parser.add_argument('--use_z_encoder', default=True)
-
     parser.add_argument('--norm_type', default='instance', 
             choices=['instance', 'batch', 'layer'])
 
@@ -116,16 +114,15 @@ def parse_args():
 
     # Loss coef
     parser.add_argument('--coef_mse', type=float, default=1.0)
-    parser.add_argument('--coef_lpips', type=float, default=0.1)
+    parser.add_argument('--coef_lpips', type=float, default=0.2)
     parser.add_argument('--coef_adv', type=float, default=0.03)
 
     # Others
     parser.add_argument('--dim_z', type=int, default=119)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--size_batch', default=8)
-    parser.add_argument('--w_class', default=False)
     parser.add_argument('--device', default='cuda:0')
-    parser.add_argument('--multi_gpu', default=False)
+    parser.add_argument('--multi_gpu', default=True)
 
     return parser.parse_args()
 
@@ -171,6 +168,7 @@ class VGG16Perceptual(nn.Module):
 
 
     def forward(self, x1, x2):
+        size_batch = x1.shape[0]
         x1_feats = self.preprocess(x1)
         x2_feats = self.preprocess(x2)
 
@@ -178,7 +176,7 @@ class VGG16Perceptual(nn.Module):
         for feat1, feat2 in zip(x1_feats, x2_feats):
             loss += feat1.sub(feat2).pow(2).mean()
 
-        return loss / len(self.idx_targets)
+        return loss / size_batch
 
 
 # Hinge Loss
@@ -405,19 +403,23 @@ def train(dev, world_size, config, args,
             fake = EG(x_gray, c, z)
 
             optimizer_g.zero_grad()
+            loss = 0
             if args.loss_adv:
                 critic, _ = D(fake, c)
                 loss_g = loss_hinge_gen(critic) * args.coef_adv
-                loss_g.backward(retain_graph=True)
+                loss += loss_g 
+                # loss_g.backward(retain_graph=True)
 
             fake = fake.add(1).div(2)
             if args.loss_mse:
                 loss_mse = args.coef_mse * nn.MSELoss()(x, fake)
-                loss_mse.backward(retain_graph=True)
+                # loss_mse.backward(retain_graph=True)
+                loss += loss_mse
             if args.loss_lpips:
                 loss_lpips = args.coef_lpips * vgg_per(x, fake)
-                loss_lpips.backward()
-
+                # loss_lpips.backward()
+                loss += loss_lpips
+            loss.backward()
             optimizer_g.step()
 
             # Logger
