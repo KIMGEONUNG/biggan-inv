@@ -3,7 +3,8 @@ from skimage import color
 import numpy as np
 from torch.utils.data import DataLoader
 import models
-from encoders import EncoderF_16
+from encoders import EncoderF_16, EncoderF_ada
+from train import Colorizer
 import torch
 import pickle
 import argparse
@@ -12,7 +13,7 @@ from torchvision.utils import make_grid
 import torchvision.transforms as transforms
 from torchvision.transforms import ToPILImage, ToTensor
 from tqdm import tqdm
-from train_e import prepare_dataset, extract_sample
+from train import prepare_dataset, extract_sample
 
 
 def parse():
@@ -20,8 +21,7 @@ def parse():
 
     parser.add_argument('--seed', type=int, default=2)
     # 5 --> 32, 4 --> 16, ...
-    parser.add_argument('--max_iter', default=100)
-    parser.add_argument('--num_layer', default=2)
+    parser.add_argument('--max_iter', default=1000)
     parser.add_argument('--num_row', type=int, default=8)
     parser.add_argument('--class_index', type=int, default=15)
     parser.add_argument('--size_batch', type=int, default=8)
@@ -29,19 +29,24 @@ def parse():
 
     # I/O
     parser.add_argument('--path_config', default='config.pickle')
-    parser.add_argument('--path_ckpt_g', default='./ckpts/test5/G_0018000.ckpt')
-    parser.add_argument('--path_ckpt_e', default='./ckpts/test5/E_0018000.ckpt')
+    parser.add_argument('--path_ckpt_eg', default='./ckpts/mark/EG_0042600.ckpt')
+    parser.add_argument('--path_args', default='./ckpts/mark//args.pkl')
     parser.add_argument('--path_output', default='./out_colorize')
-    parser.add_argument('--path_args', default='./ckpts/test5/args.pkl')
     parser.add_argument('--path_imgnet_train', default='./imgnet/train')
     parser.add_argument('--path_imgnet_val', default='./imgnet/val')
 
+    parser.add_argument('--num_layer', default=2)
+    parser.add_argument('--norm_type', default='instance', 
+            choices=['instance', 'batch', 'layer'])
+
     # Dataset
     parser.add_argument('--iter_sample', default=4)
+    parser.add_argument('--dim_z', type=int, default=119)
 
     # User Input 
     parser.add_argument('--index_target',
-            type=int, nargs='+', default=[11, 14, 15])
+            type=int, nargs='+', default=list(range(20)))
+            # type=int, nargs='+', default=[0, 1 ,2 ,3 ,4, 11, 14, 15])
     parser.add_argument('--index_force',
             type=int, default=None)
             # type=int, default=14)
@@ -128,17 +133,12 @@ def main(args):
     with open(args.path_args, 'rb') as f:
         args_loaded = pickle.load(f)
 
-    # Load Generator
-    G = models.Generator(**config)
-    G.load_state_dict(torch.load(args.path_ckpt_g), strict=False)
-    G.to(dev)
-    G.eval()
-
-    # Load Encoder
-    encoder = EncoderF_16(norm=args_loaded.norm_type)
-    encoder.load_state_dict(torch.load(args.path_ckpt_e))
-    encoder.to(dev)
-    encoder.eval()
+    # Load Model 
+    EG = Colorizer(config, args.path_ckpt_eg, args.norm_type,
+            id_mid_layer=args.num_layer)
+    EG.load_state_dict(torch.load(args.path_ckpt_eg), strict=True)
+    EG.eval()
+    EG.to(dev)
 
     if not os.path.exists(args.path_output):
         os.mkdir(args.path_output)
@@ -152,23 +152,20 @@ def main(args):
 
                 # Sample z
                 if args.z_sample_scheme == 'sample':
-                    z = torch.zeros((args.size_batch, G.dim_z)).to(dev)
+                    z = torch.zeros((args.size_batch, args.dim_z)).to(dev)
                     z.normal_(mean=0, std=0.8)
                 elif args.z_sample_scheme == 'zero': 
-                    z = torch.zeros((args.size_batch, G.dim_z)).to(dev)
+                    z = torch.zeros((args.size_batch, args.dim_z)).to(dev)
                 elif args.z_sample_scheme == 'one': 
-                    z = torch.ones((args.size_batch, G.dim_z)).to(dev)
+                    z = torch.ones((args.size_batch, args.dim_z)).to(dev)
                 else:
                     raise Exception('Invalid z sample scheme')
-
 
                 # Force Index
                 if args.index_force is not None:
                     c = ((c / c) * args.index_force).long()
 
-
-                f = encoder(x_gray) # [batch, 1024, 16, 16]
-                output = G.forward_from(z, G.shared(c), args.num_layer, f)
+                output = EG(x_gray, c, z)
                 output = output.add(1).div(2)
 
                 # LAB
@@ -184,7 +181,7 @@ def main(args):
                 im.save('./%s/%03d.jpg' % (args.path_output, num_iter))
 
                 num_iter += 1
-                if i > args.max_iter:
+                if num_iter > args.max_iter:
                     break
 
 if __name__ == '__main__':

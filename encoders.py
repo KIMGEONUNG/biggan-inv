@@ -37,10 +37,12 @@ class ConvBlock(nn.Module):
         # Nonlinearity 
         if activation == 'relu':
             blocks.append(nn.ReLU(True))
-        if activation == 'sigmoid':
+        elif activation == 'sigmoid':
             blocks.append(nn.Sigmoid())
         elif activation == 'lrelu':
-            raise NotImplementedError
+            self.activation = nn.LeakyReLU(0.2, True)
+        else:
+            raise Exception('Invalid nonlinearity')
 
         # Dropout
         if dropout is not None:
@@ -50,6 +52,146 @@ class ConvBlock(nn.Module):
 
     def forward(self, x):
         return self.conv_block(x)
+
+
+class AdaIN(nn.Module):
+
+    def __init__(self, dim_ch, dim_cond):
+        super().__init__()
+        self.dim_ch = dim_ch
+        self.dim_cond = dim_cond
+        self.cal_m = nn.Linear(dim_cond, dim_ch)
+        self.cal_s = nn.Linear(dim_cond, dim_ch)
+        self.eps = 1e-05 
+
+    def forward(self, x, c):
+        dim_batch = x.shape[0]
+
+        m = self.cal_m(c)
+        m = m.view(dim_batch, self.dim_ch, 1, 1)
+        s = self.cal_m(c)
+        s = s.view(dim_batch, self.dim_ch, 1, 1)
+
+        m_x = x.mean(dim=(-2, -1))
+        m_x = m_x.view(dim_batch, self.dim_ch, 1, 1)
+
+        m_s = x.std(dim=(-2, -1))
+        m_s = m_s.view(dim_batch, self.dim_ch, 1, 1)
+
+        x = (x - m_x) / (m_s + self.eps) 
+        x = x * s + m
+
+        return x
+
+
+class AdaConvBlock(nn.Module):
+    def __init__(self, 
+            ch_in, 
+            ch_out, 
+            ch_c=128, 
+            is_down=False,
+            dropout=0.2,
+            activation='relu', 
+            **kwargs):
+        super().__init__()
+
+        # Convolution
+        stride = 1
+        if is_down: 
+            stride = 2
+        self.conv = nn.Conv2d(ch_in, ch_out, 
+                kernel_size=3, 
+                stride=stride, 
+                padding=1)
+
+        # Normalization 
+        self.normalize = AdaIN(ch_out, ch_c)
+
+        # Nonlinearity 
+        self.activation = None
+        if activation == 'relu':
+            self.activation = nn.ReLU(True)
+        elif activation == 'sigmoid':
+            self.activation = nn.Sigmoid()
+        elif activation == 'lrelu':
+            self.activation = nn.LeakyReLU(0.2, True)
+        else:
+            raise Exception('Invalid nonlinearity')
+
+        # Dropout
+        self.dropout = None
+        if dropout is not None:
+            self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x, c):
+        x = self.conv(x)
+        x = self.normalize(x, c)
+        x = self.activation(x)
+
+        if self.dropout is not None:
+            x = self.dropout(x)
+
+        return x
+
+
+class EncoderF_ada(nn.Module):
+    def __init__(self, ch_in=1, ch_out=768, ch_unit=96, ch_c=128, norm='instance'):
+        super().__init__()
+        self.first = ConvBlock(ch_in, ch_unit * 1, is_down=False,
+            norm=norm, shape=(96, 256, 256))
+
+        #  96 x 256 x 256
+        self.adaconv1 = AdaConvBlock(ch_unit * 1, ch_unit * 1, ch_c,
+            is_down=False, norm=norm, shape=(96, 256, 256))
+        self.adaconv2 = AdaConvBlock(ch_unit * 1, ch_unit * 1, ch_c, 
+            is_down=False, norm=norm, shape=(96, 256, 256))
+        self.adaconv3 = AdaConvBlock(ch_unit * 1, ch_unit * 2, ch_c,
+            is_down=True, norm=norm, shape=(192, 128, 128))
+        #  192 x 128 x 128 
+        self.adaconv4 = AdaConvBlock(ch_unit * 2, ch_unit * 2, ch_c,
+            is_down=False, norm=norm, shape=(192, 128, 128))
+        self.adaconv5 = AdaConvBlock(ch_unit * 2, ch_unit * 2, ch_c,
+            is_down=False, norm=norm, shape=(192, 128, 128))
+        self.adaconv6 = AdaConvBlock(ch_unit * 2, ch_unit * 4, ch_c,
+            is_down=True, norm=norm, shape=(384, 64, 64))
+        #  384 x 64 x 64 
+        self.adaconv7 = AdaConvBlock(ch_unit * 4, ch_unit * 4, ch_c,
+            is_down=False, norm=norm, shape=(384, 64, 64))
+        self.adaconv8 = AdaConvBlock(ch_unit * 4, ch_unit * 4, ch_c,
+            is_down=False, norm=norm, shape=(384, 64, 64))
+        self.adaconv9 = AdaConvBlock(ch_unit * 4, ch_unit * 8, ch_c,
+            is_down=True, norm=norm, shape=(768, 32, 32))
+        #  768 x 32 x 32 
+        self.adaconv10 = AdaConvBlock(ch_unit * 8, ch_unit * 8, ch_c,
+            is_down=False, norm=norm, shape=(768, 32, 32))
+        self.adaconv11 = AdaConvBlock(ch_unit * 8, ch_unit * 8, ch_c,
+            is_down=False, norm=norm, shape=(768, 32, 32))
+        self.adaconv12 = AdaConvBlock(ch_unit * 8, ch_unit * 8, ch_c,
+            is_down=True, norm=norm, shape=(768, 16, 16))
+        #  768 x 16 x 16 
+
+        self.last = nn.Conv2d(ch_unit * 8, ch_unit * 8, 
+            kernel_size=3, 
+            stride=1, 
+            padding=1)
+
+    def forward(self, x, c):
+        x = self.first(x)
+        x = self.adaconv1(x, c)
+        x = self.adaconv2(x, c)
+        x = self.adaconv3(x, c)
+        x = self.adaconv4(x, c)
+        x = self.adaconv5(x, c)
+        x = self.adaconv6(x, c)
+        x = self.adaconv7(x, c)
+        x = self.adaconv8(x, c)
+        x = self.adaconv9(x, c)
+        x = self.adaconv10(x, c)
+        x = self.adaconv11(x, c)
+        x = self.adaconv12(x, c)
+        x = self.last(x)
+        return x
+
 
 class EncoderZ(nn.Module):
     """
