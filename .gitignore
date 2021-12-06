@@ -17,6 +17,5 @@ sampling/
 config.pickle
 validation_f_16/
 ckpts/
-out_colorize/
 *.pickle
-out_colorize*
+out_*
