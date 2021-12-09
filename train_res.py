@@ -53,11 +53,11 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='resnet_v1_r2')
+    parser.add_argument('--task_name', default='resnet_best')
     parser.add_argument('--detail', default='multi gpu')
 
     # Mode
-    parser.add_argument('--norm_type', default='instance', 
+    parser.add_argument('--norm_type', default='adabatch', 
             choices=['instance', 'batch', 'layer', 'adain', 'adabatch'])
 
     # IO
@@ -70,7 +70,8 @@ def parse_args():
     parser.add_argument('--path_imgnet_val', default='./imgnet/val')
 
     parser.add_argument('--index_target',
-            type=int, nargs='+', default=[8, 11,14,15])
+            type=int, nargs='+', default=list(range(20)))
+            # type=int, nargs='+', default=[8, 11,14,15])
             # type=int, nargs='+', default=[15])
     parser.add_argument('--num_worker', default=8)
     parser.add_argument('--iter_sample', default=4)
