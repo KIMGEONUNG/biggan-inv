@@ -4,7 +4,7 @@ import numpy as np
 from torch.utils.data import DataLoader
 import models
 from encoders import EncoderF_16, EncoderF_ada
-from train import Colorizer
+from train_res import Colorizer
 import torch
 import pickle
 import argparse
@@ -29,8 +29,8 @@ def parse():
 
     # I/O
     parser.add_argument('--path_config', default='config.pickle')
-    parser.add_argument('--path_ckpt_eg', default='./ckpts/mark/EG_0042600.ckpt')
-    parser.add_argument('--path_args', default='./ckpts/mark//args.pkl')
+    parser.add_argument('--path_ckpt_eg', default='./ckpts/resnet_adabatch_c20/EG_0184000.ckpt')
+    parser.add_argument('--path_args', default='./ckpts/resnet_adabatch_c20/args.pkl')
     parser.add_argument('--path_output', default='./out_colorize')
     parser.add_argument('--path_imgnet_train', default='./imgnet/train')
     parser.add_argument('--path_imgnet_val', default='./imgnet/val')
@@ -57,8 +57,11 @@ def parse():
             choices=['valid', 'train']
             )
 
-    # Conversion
-    parser.add_argument('--device', default='cuda:1')
+    parser.add_argument('--view_gt', default=False)
+    parser.add_argument('--view_gray', default=True)
+    parser.add_argument('--view_rgb', default=False)
+    parser.add_argument('--view_lab', default=True)
+    parser.add_argument('--device', default='cuda:0')
 
     return parser.parse_args()
 
@@ -103,6 +106,12 @@ def main(args):
     if args.seed >= 0:
         set_seed(args.seed)
 
+    # Load Configuratuion
+    with open(args.path_config, 'rb') as f:
+        config = pickle.load(f)
+    with open(args.path_args, 'rb') as f:
+        args_loaded = pickle.load(f)
+
     dev = args.device
 
     prep = transforms.Compose([
@@ -113,7 +122,7 @@ def main(args):
     dataset, dataset_val = prepare_dataset(
             args.path_imgnet_train,
             args.path_imgnet_val,
-            args.index_target,
+            args_loaded.index_target,
             prep=prep)
     if args.colorization_target  == 'train':
         print('Load train dataset')
@@ -125,16 +134,11 @@ def main(args):
         raise Exception('Invalid colorization target')
 
     dataloader = DataLoader(dataset_target, batch_size=args.size_batch,
-            shuffle=True, num_workers=args.num_worker, drop_last=True)
+            shuffle=False, num_workers=args.num_worker, drop_last=True)
 
-    # Load Configuratuion
-    with open(args.path_config, 'rb') as f:
-        config = pickle.load(f)
-    with open(args.path_args, 'rb') as f:
-        args_loaded = pickle.load(f)
 
     # Load Model 
-    EG = Colorizer(config, args.path_ckpt_eg, args.norm_type,
+    EG = Colorizer(config, args.path_ckpt_eg, args_loaded.norm_type,
             id_mid_layer=args.num_layer)
     EG.load_state_dict(torch.load(args.path_ckpt_eg), strict=True)
     EG.eval()
@@ -172,11 +176,20 @@ def main(args):
                 labs = fusion(x.detach().cpu(), output.detach().cpu())
 
                 # Save Result
-                grid_gt = make_grid(x, nrow=args.num_row)
-                grid_gray = make_grid(x_gray, nrow=args.num_row)
-                grid_out = make_grid(output, nrow=args.num_row)
-                grid_lab = make_grid(labs, nrow=args.num_row).to(dev)
-                grid = torch.cat([grid_gt, grid_gray, grid_out, grid_lab], dim=-2)
+                grids = []
+                if args.view_gt:
+                    grid_gt = make_grid(x, nrow=args.num_row)
+                    grids.append(grid_gt)
+                if args.view_gray:
+                    grid_gray = make_grid(x_gray, nrow=args.num_row)
+                    grids.append(grid_gray)
+                if args.view_rgb:
+                    grid_out = make_grid(output, nrow=args.num_row)
+                    grids.append(grid_out)
+                if args.view_lab:
+                    grid_lab = make_grid(labs, nrow=args.num_row).to(dev)
+                    grids.append(grid_lab)
+                grid = torch.cat(grids, dim=-2)
                 im = ToPILImage()(grid)
                 im.save('./%s/%03d.jpg' % (args.path_output, num_iter))
 
