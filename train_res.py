@@ -53,7 +53,7 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='resnet_best')
+    parser.add_argument('--task_name', default='resnet_shedule')
     parser.add_argument('--detail', default='multi gpu')
 
     # Mode
@@ -78,7 +78,7 @@ def parse_args():
 
     # Encoder Traning
     parser.add_argument('--num_layer', default=2)
-    parser.add_argument('--num_epoch', default=400)
+    parser.add_argument('--num_epoch', default=50)
     parser.add_argument('--interval_save_loss', default=4)
     parser.add_argument('--interval_save_train', default=40)
     parser.add_argument('--interval_save_test', default=400)
@@ -122,7 +122,7 @@ def parse_args():
     parser.add_argument('--dim_z', type=int, default=119)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--size_batch', default=8)
-    parser.add_argument('--device', default='cuda:0')
+    parser.add_argument('--device', default='cuda:3')
     parser.add_argument('--multi_gpu', default=False)
 
     return parser.parse_args()
@@ -357,6 +357,12 @@ def train(dev, world_size, config, args,
     optimizer_d = optim.Adam(D.parameters(),
             lr=args.lr_d, betas=(args.b1_d, args.b2_d))
 
+    # Schedular
+    scheduler_g = optim.lr_scheduler.LambdaLR(optimizer=optimizer_g,
+                                        lr_lambda=lambda epoch: 0.95 ** epoch)
+    scheduler_d = optim.lr_scheduler.LambdaLR(optimizer=optimizer_d,
+                                        lr_lambda=lambda epoch: 0.95 ** epoch)
+
     # Datasets
     sampler, sampler_real = None, None
     if use_multi_gpu:
@@ -376,6 +382,8 @@ def train(dev, world_size, config, args,
 
     num_iter = 0
     for epoch in range(args.num_epoch):
+        scheduler_d.step(epoch)
+        scheduler_g.step(epoch)
         if use_multi_gpu:
             sampler.set_epoch(epoch)
         for i, (x, c) in enumerate(tqdm(dataloader)):
