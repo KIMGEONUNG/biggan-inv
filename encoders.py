@@ -245,7 +245,6 @@ class ResConvBlock(nn.Module):
             raise Exception('Invalid Pooling')
 
         # Dropout
-        self.dropout = None
         if dropout is not None:
             self.dropout = nn.Dropout(dropout)
 
@@ -259,10 +258,11 @@ class ResConvBlock(nn.Module):
         else:
             x_ = self.normalize_1(x_)
         x_ = self.activation(x_)
-        x_ = self.conv_1(x_)
 
         if self.is_down:
             x_ = self.pool(x_)
+
+        x_ = self.conv_1(x_)
 
         if self.has_condition:
             x_ = self.normalize_2(x_, c)

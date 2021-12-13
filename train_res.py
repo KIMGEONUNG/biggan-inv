@@ -53,7 +53,7 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='resnet_best')
+    parser.add_argument('--task_name', default='resnet_chaneseq')
     parser.add_argument('--detail', default='multi gpu')
 
     # Mode

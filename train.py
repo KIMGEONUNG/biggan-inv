@@ -61,7 +61,7 @@ def parse_args():
             choices=['instance', 'batch', 'layer'])
 
     # IO
-    parser.add_argument('--path_log', default='runs_test')
+    parser.add_argument('--path_log', default='runs_res')
     parser.add_argument('--path_ckpts', default='ckpts')
     parser.add_argument('--path_config', default='config.pickle')
     parser.add_argument('--path_ckpt_g', default='./pretrained/G_ema_256.pth')
@@ -70,8 +70,7 @@ def parse_args():
     parser.add_argument('--path_imgnet_val', default='./imgnet/val')
 
     parser.add_argument('--index_target',
-            # type=int, nargs='+', default=[11,14,15])
-            type=int, nargs='+', default=[15])
+            type=int, nargs='+', default=list(range(20)))
     parser.add_argument('--num_worker', default=8)
     parser.add_argument('--iter_sample', default=4)
 
@@ -122,7 +121,7 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--size_batch', default=8)
     parser.add_argument('--device', default='cuda:0')
-    parser.add_argument('--multi_gpu', default=True)
+    parser.add_argument('--multi_gpu', default=False)
 
     return parser.parse_args()
 
