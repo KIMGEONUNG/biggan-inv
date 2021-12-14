@@ -53,13 +53,13 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='resnet_lrelu')
+    parser.add_argument('--task_name', default='resnet_seperate')
     parser.add_argument('--detail', default='multi gpu')
 
     # Mode
     parser.add_argument('--norm_type', default='adabatch', 
             choices=['instance', 'batch', 'layer', 'adain', 'adabatch'])
-    parser.add_argument('--activation', default='lrelu', 
+    parser.add_argument('--activation', default='relu', 
             choices=['relu', 'lrelu', 'sigmoid'])
 
     # IO
@@ -124,7 +124,7 @@ def parse_args():
     parser.add_argument('--dim_z', type=int, default=119)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--size_batch', default=8)
-    parser.add_argument('--device', default='cuda:1')
+    parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--multi_gpu', default=False)
 
     return parser.parse_args()
@@ -269,6 +269,7 @@ def lab_fusion(x_l, x_ab):
         
         l = img_gt[:, :, :1]
         ab = img_hat[:, :, 1:]
+
         img_fusion = np.concatenate((l, ab), axis=-1)
         img_fusion = color.lab2rgb(img_fusion)
         img_fusion = torch.from_numpy(img_fusion)
@@ -404,11 +405,11 @@ def train(dev, world_size, config, args,
 
     num_iter = 0
     for epoch in range(args.num_epoch):
-        scheduler_d.step(epoch)
-        scheduler_g.step(epoch)
         if use_multi_gpu:
             sampler.set_epoch(epoch)
-        for i, (x, c) in enumerate(tqdm(dataloader)):
+        tbar = tqdm(dataloader)
+        tbar.set_description('epoch: %03d' % epoch)
+        for i, (x, c) in enumerate(tbar):
             EG.train()
 
             x = x.to(dev)
@@ -448,17 +449,15 @@ def train(dev, world_size, config, args,
                 critic, _ = D(fake, c)
                 loss_g = loss_hinge_gen(critic) * args.coef_adv
                 loss += loss_g 
-                # loss_g.backward(retain_graph=True)
 
             fake = fake.add(1).div(2)
             if args.loss_mse:
                 loss_mse = args.coef_mse * nn.MSELoss()(x, fake)
-                # loss_mse.backward(retain_graph=True)
                 loss += loss_mse
             if args.loss_lpips:
                 loss_lpips = args.coef_lpips * vgg_per(x, fake)
-                # loss_lpips.backward()
                 loss += loss_lpips
+
             loss.backward()
             optimizer_g.step()
 
@@ -480,6 +479,8 @@ def train(dev, world_size, config, args,
                     make_log_ckpt(EG, D, args, num_iter, path_ckpts)
 
             num_iter += 1
+        scheduler_d.step(epoch)
+        scheduler_g.step(epoch)
 
 
 def make_log_ckpt(EG, D, args, num_iter, path_ckpts):
