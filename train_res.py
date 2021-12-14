@@ -59,6 +59,8 @@ def parse_args():
     # Mode
     parser.add_argument('--norm_type', default='adabatch', 
             choices=['instance', 'batch', 'layer', 'adain', 'adabatch'])
+    parser.add_argument('--activation', default='lrelu', 
+            choices=['relu', 'lrelu', 'sigmoid'])
 
     # IO
     parser.add_argument('--path_log', default='runs_res')
@@ -290,11 +292,20 @@ def setup_dist(rank, world_size):
 
 
 class Colorizer(nn.Module):
-    def __init__(self, config, path_ckpt_g, norm_type,
-            id_mid_layer=2, fix_g=False):
+    def __init__(self, 
+                 config, 
+                 path_ckpt_g, 
+                 norm_type,
+                 activation='relu',
+                 id_mid_layer=2, 
+                 fix_g=False):
         super().__init__()
+
         self.id_mid_layer = id_mid_layer  
-        self.E = EncoderF_Res(norm=norm_type)
+
+        self.E = EncoderF_Res(norm=norm_type,
+                              activation=activation)
+
         self.G = models.Generator(**config)
         self.G.load_state_dict(torch.load(path_ckpt_g), strict=False)
         self.fix_g = fix_g
@@ -333,8 +344,12 @@ def train(dev, world_size, config, args,
         writer = SummaryWriter(path_log)
 
     # Setup model
-    EG = Colorizer(config, args.path_ckpt_g, args.norm_type,
-            id_mid_layer=args.num_layer, fix_g=(not args.finetune_g))
+    EG = Colorizer(config, 
+                   args.path_ckpt_g, 
+                   args.norm_type,
+                   id_mid_layer=args.num_layer, 
+                   activation=args.activation, 
+                   fix_g=(not args.finetune_g))
     EG.train()
 
     D = models.Discriminator(**config)

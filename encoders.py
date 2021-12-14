@@ -157,27 +157,50 @@ class ResConvBlock(nn.Module):
 
 
 class EncoderF_Res(nn.Module):
-    """
-    input feature: [batch, 3, 256, 256]
-    Target feature: [batch, 768, 16, 16]
-    """
-    def __init__(self, ch_in=1, ch_out=768, ch_unit=96, norm='batch'):
+
+    def __init__(self,
+                 ch_in=1,
+                 ch_out=768,
+                 ch_unit=96,
+                 norm='batch',
+                 activation='relu'):
         super().__init__()
+
+        kwargs = {}
+        if activation == 'lrelu':
+            kwargs['l_slope'] = 0.2
+
         # output is 96 x 256 x 256
         self.res1 = ResConvBlock(ch_in, ch_unit * 1,
-                                 is_down=False, norm=norm)
+                                 is_down=False, 
+                                 activation=activation,
+                                 norm=norm,
+                                 **kwargs)
         # output is 192 x 128 x 128 
         self.res2 = ResConvBlock(ch_unit * 1, ch_unit * 2,
-                                 is_down=True, norm=norm)
+                                 is_down=True, 
+                                 activation=activation,
+                                 norm=norm,
+                                 **kwargs)
         # output is  384 x 64 x 64 
         self.res3 = ResConvBlock(ch_unit * 2, ch_unit * 4,
-                                 is_down=True, norm=norm)
+                                 is_down=True, 
+                                 activation=activation,
+                                 norm=norm,
+                                 **kwargs)
         # output is  768 x 32 x 32 
         self.res4 = ResConvBlock(ch_unit * 4, ch_unit * 8,
-                                 is_down=True, norm=norm)
+                                 is_down=True, 
+                                 activation=activation,
+                                 norm=norm,
+                                 **kwargs)
         # output is  768 x 16 x 16 
         self.res5 = ResConvBlock(ch_unit * 8, ch_unit * 8,
-                                 is_down=True, norm=norm, dropout=None)
+                                 is_down=True, 
+                                 activation=activation,
+                                 norm=norm, 
+                                 dropout=None,
+                                 **kwargs)
 
     def forward(self, x, c=None):
         x = self.res1(x, c)
@@ -199,13 +222,7 @@ class EncoderF_Res(nn.Module):
 # index 6: ([batch, 96, 256, 256])
 # result: ([batch, 3 256, 256])
 if __name__ == '__main__':
-    # model = EncoderF_Res()
-    # def count_parameters(model):
-    #     return sum(p.numel() for p in model.parameters() if p.requires_grad)
-    # print(count_parameters(model))
-    from models.layers import GBlock
-    model = GBlock(6, 7)
-    print(model)
-
-
-    pass
+    model = EncoderF_Res()
+    def count_parameters(model):
+        return sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(count_parameters(model))
