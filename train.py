@@ -53,7 +53,7 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='resnet_a')
+    parser.add_argument('--task_name', default='resnet_lrelu')
     parser.add_argument('--detail', default='multi gpu')
 
     # Mode
@@ -124,7 +124,7 @@ def parse_args():
     parser.add_argument('--dim_z', type=int, default=119)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--size_batch', default=8)
-    parser.add_argument('--device', default='cuda:3')
+    parser.add_argument('--device', default='cuda:1')
     parser.add_argument('--multi_gpu', default=False)
 
     return parser.parse_args()
@@ -351,6 +351,13 @@ def train(dev, world_size, config, args,
                    activation=args.activation, 
                    fix_g=(not args.finetune_g))
     EG.train()
+
+    # Print Architecture
+    if use_multi_gpu:
+        if dev == 0:
+            print(EG)
+    else:
+        print(EG)
 
     D = models.Discriminator(**config)
     D.train()
