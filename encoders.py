@@ -20,8 +20,8 @@ class ClassConditionNorm(nn.Module):
         self.eps = eps
         self.norm_style = norm_style 
 
-        self.register_buffer('stored_mean', torch.zeros(output_size))
-        self.register_buffer('stored_var', torch.ones(output_size)) 
+        self.register_buffer('stored_mean', torch.zeros(output_size).to(torch.float16))
+        self.register_buffer('stored_var', torch.ones(output_size).to(torch.float16)) 
 
     def forward(self, x, y):
         # Calculate class-conditional gains and biases

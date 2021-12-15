@@ -66,8 +66,8 @@ class SN(object):
         self.eps = eps
         # Register a singular vector for each sv
         for i in range(self.num_svs):
-            self.register_buffer('u%d' % i, torch.randn(1, num_outputs))
-            self.register_buffer('sv%d' % i, torch.ones(1))
+            self.register_buffer('u%d' % i, torch.randn(1, num_outputs).to(torch.float16))
+            self.register_buffer('sv%d' % i, torch.ones(1).to(torch.float16))
 
     # Singular vectors (u side)
     @property
@@ -318,8 +318,8 @@ class ccbn(nn.Module):
         elif self.mybn:
             self.bn = myBN(output_size, self.eps, self.momentum)
         elif self.norm_style in ['bn', 'in']:
-            self.register_buffer('stored_mean', torch.zeros(output_size))
-            self.register_buffer('stored_var', torch.ones(output_size))
+            self.register_buffer('stored_mean', torch.zeros(output_size).to(torch.float16))
+            self.register_buffer('stored_var', torch.ones(output_size).to(torch.float16))
 
     def forward(self, x, y):
         # Calculate class-conditional gains and biases

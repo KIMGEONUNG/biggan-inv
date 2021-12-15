@@ -24,7 +24,7 @@ from torchvision.transforms import (ToPILImage, Compose, ToTensor,
         Resize, CenterCrop)
 from tqdm import tqdm
 
-
+from torch.cuda.amp import GradScaler, autocast
 import torch.multiprocessing as mp
 import torch.distributed as dist 
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -53,7 +53,7 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='resnet_seperate')
+    parser.add_argument('--task_name', default='resnet_amp')
     parser.add_argument('--detail', default='multi gpu')
 
     # Mode
@@ -121,10 +121,11 @@ def parse_args():
     parser.add_argument('--coef_adv', type=float, default=0.03)
 
     # Others
+    parser.add_argument('--amp', default=True)
     parser.add_argument('--dim_z', type=int, default=119)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--size_batch', default=8)
-    parser.add_argument('--device', default='cuda:0')
+    parser.add_argument('--device', default='cuda:3')
     parser.add_argument('--multi_gpu', default=False)
 
     return parser.parse_args()
@@ -403,6 +404,11 @@ def train(dev, world_size, config, args,
             sampler=sampler, pin_memory=True,
             num_workers=args.num_worker, drop_last=True)
 
+    # AMP
+    scalar = None
+    if args.amp:
+        scalar = GradScaler()
+
     num_iter = 0
     for epoch in range(args.num_epoch):
         if use_multi_gpu:
@@ -423,43 +429,48 @@ def train(dev, world_size, config, args,
             # Discriminator Loss
             if args.loss_adv: 
                 for _ in range(args.num_dis):
-                    with torch.no_grad():
-                        fake = EG(x_gray, c, z)
-
                     optimizer_d.zero_grad()
+                    with autocast():
+                        with torch.no_grad():
+                            fake = EG(x_gray, c, z)
 
-                    x_real, _ = dataloader_real.__next__()
-                    x_real = x_real.to(dev)
-                    x_real = (x_real - 0.5) * 2
 
-                    critic_real, _ = D(x_real, c)
-                    critic_fake, _ = D(fake, c)
-                    d_loss_real, d_loss_fake = loss_hinge_dis(critic_fake, critic_real)
-                    loss_d = (d_loss_real + d_loss_fake) / 2  
+                        x_real, _ = dataloader_real.__next__()
+                        x_real = x_real.to(dev)
+                        x_real = (x_real - 0.5) * 2
 
-                    loss_d.backward()
-                    optimizer_d.step()
+                        critic_real, _ = D(x_real, c)
+                        critic_fake, _ = D(fake, c)
+                        d_loss_real, d_loss_fake = loss_hinge_dis(critic_fake, critic_real)
+                        loss_d = (d_loss_real + d_loss_fake) / 2  
+
+                    scalar.scale(loss_d).backward()
+                    scalar.step(optimizer_d)
+                    scalar.update()
 
             # Generator Loss 
-            fake = EG(x_gray, c, z)
-
             optimizer_g.zero_grad()
-            loss = 0
-            if args.loss_adv:
-                critic, _ = D(fake, c)
-                loss_g = loss_hinge_gen(critic) * args.coef_adv
-                loss += loss_g 
+            with autocast():
+                fake = EG(x_gray, c, z)
+                loss = 0
+                if args.loss_adv:
+                    critic, _ = D(fake, c)
+                    loss_g = loss_hinge_gen(critic) * args.coef_adv
+                    loss += loss_g 
 
-            fake = fake.add(1).div(2)
-            if args.loss_mse:
-                loss_mse = args.coef_mse * nn.MSELoss()(x, fake)
-                loss += loss_mse
-            if args.loss_lpips:
-                loss_lpips = args.coef_lpips * vgg_per(x, fake)
-                loss += loss_lpips
+                fake = fake.add(1).div(2)
+                if args.loss_mse:
+                    loss_mse = args.coef_mse * nn.MSELoss()(x, fake)
+                    loss += loss_mse
+                if args.loss_lpips:
+                    loss_lpips = args.coef_lpips * vgg_per(x, fake)
+                    loss += loss_lpips
 
-            loss.backward()
-            optimizer_g.step()
+            scalar.scale(loss).backward()
+            scalar.step(optimizer_g)
+            scalar.update()
+            # loss.backward()
+            # optimizer_g.step()
 
             # Logger
             condition = dev == 0 if use_multi_gpu else True
@@ -516,7 +527,8 @@ def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name):
             c = sample['cs'][id_sample]
             z, x, c = z.to(dev), x.to(dev), c.to(dev)
 
-            output = EG(x, c, z)
+            with autocast():
+                output = EG(x, c, z)
             output = output.add(1).div(2).detach().cpu()
             output_fusion = lab_fusion(x_gt, output)
             outputs_rgb.append(output)
