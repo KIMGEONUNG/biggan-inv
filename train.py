@@ -59,7 +59,7 @@ def parse_args():
     # Mode
     parser.add_argument('--norm_type', default='adabatch', 
             choices=['instance', 'batch', 'layer', 'adain', 'adabatch'])
-    parser.add_argument('--activation', default='relu', 
+    parser.add_argument('--activation', default='lrelu', 
             choices=['relu', 'lrelu', 'sigmoid'])
 
     # IO
@@ -73,8 +73,6 @@ def parse_args():
 
     parser.add_argument('--index_target',
             type=int, nargs='+', default=list(range(20)))
-            # type=int, nargs='+', default=[8, 11,14,15])
-            # type=int, nargs='+', default=[15])
     parser.add_argument('--num_worker', default=8)
     parser.add_argument('--iter_sample', default=4)
 
@@ -121,12 +119,12 @@ def parse_args():
     parser.add_argument('--coef_adv', type=float, default=0.03)
 
     # Others
-    parser.add_argument('--amp', default=True)
     parser.add_argument('--dim_z', type=int, default=119)
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--size_batch', default=8)
+    parser.add_argument('--size_batch', default=36)
     parser.add_argument('--device', default='cuda:3')
-    parser.add_argument('--multi_gpu', default=False)
+    parser.add_argument('--multi_gpu', default=True)
+    parser.add_argument('--amp', default=True)
 
     return parser.parse_args()
 
@@ -328,6 +326,39 @@ class Colorizer(nn.Module):
             super().train(mode)
 
 
+def loss_fn_d(EG, D, c, z, dev, x_gray, x_real):
+    with torch.no_grad():
+        fake = EG(x_gray, c, z)
+    critic_real, _ = D(x_real, c)
+    critic_fake, _ = D(fake, c)
+    d_loss_real, d_loss_fake = loss_hinge_dis(critic_fake, critic_real)
+    loss_d = (d_loss_real + d_loss_fake) / 2  
+    return loss_d
+
+
+def loss_fn_g(EG, D, vgg_per, x, c, z, x_gray, args):
+    fake = EG(x_gray, c, z)
+    loss_dic = {}
+    loss = 0
+    if args.loss_adv:
+        critic, _ = D(fake, c)
+        loss_g = loss_hinge_gen(critic) * args.coef_adv
+        loss += loss_g 
+        loss_dic['loss_g'] = loss_g 
+
+    fake = fake.add(1).div(2)
+    if args.loss_mse:
+        loss_mse = args.coef_mse * nn.MSELoss()(x, fake)
+        loss += loss_mse
+        loss_dic['mse'] = loss_mse
+    if args.loss_lpips:
+        loss_lpips = args.coef_lpips * vgg_per(x, fake)
+        loss += loss_lpips
+        loss_dic['lpips'] = loss_lpips
+
+    return loss, loss_dic
+
+
 def train(dev, world_size, config, args,
             dataset=None,
             sample_train=None,
@@ -371,9 +402,12 @@ def train(dev, world_size, config, args,
     EG = EG.to(dev)
     D = D.to(dev)
     if use_multi_gpu:
-        EG = DDP(EG, device_ids=[dev], find_unused_parameters=True)
-        D = DDP(D, device_ids=[dev], find_unused_parameters=True)
-        vgg_per = DDP(vgg_per, device_ids=[dev], find_unused_parameters=True)
+        EG = DDP(EG, device_ids=[dev], 
+                 find_unused_parameters=True)
+        D = DDP(D, device_ids=[dev], 
+                find_unused_parameters=False)
+        vgg_per = DDP(vgg_per, device_ids=[dev], 
+                      find_unused_parameters=False)
 
     # Optimizer
     optimizer_g = optim.Adam([p for p in EG.parameters() if p.requires_grad],
@@ -405,9 +439,9 @@ def train(dev, world_size, config, args,
             num_workers=args.num_worker, drop_last=True)
 
     # AMP
-    scalar = None
+    scaler = None
     if args.amp:
-        scalar = GradScaler()
+        scaler = GradScaler()
 
     num_iter = 0
     for epoch in range(args.num_epoch):
@@ -418,64 +452,57 @@ def train(dev, world_size, config, args,
         for i, (x, c) in enumerate(tbar):
             EG.train()
 
-            x = x.to(dev)
-            c = c.to(dev)
+            x, c = x.to(dev), c.to(dev)
             x_gray = transforms.Grayscale()(x)
 
             # Sample z
             z = torch.zeros((args.size_batch, args.dim_z)).to(dev)
             z.normal_(mean=0, std=0.8)
 
-            # Discriminator Loss
-            if args.loss_adv: 
-                for _ in range(args.num_dis):
-                    optimizer_d.zero_grad()
+            # DISCRIMINATOR 
+            for _ in range(args.num_dis):
+                optimizer_d.zero_grad()
+
+                x_real, c_real = dataloader_real.__next__()
+                x_real, c_real = x_real.to(dev), c_real.to(dev)
+                x_real = (x_real - 0.5) * 2
+
+                cal_loss_d = lambda: loss_fn_d(EG=EG, D=D,
+                                               c=c, z=z, dev=dev,
+                                               x_gray=x_gray, x_real=x_real)
+                if args.amp:
                     with autocast():
-                        with torch.no_grad():
-                            fake = EG(x_gray, c, z)
+                        loss_d = cal_loss_d()
+                    scaler.scale(loss_d).backward()
+                    scaler.step(optimizer_d)
+                    scaler.update()
+                else:
+                    loss_d = cal_loss_d() 
+                    loss_d.backward()
+                    optimizer_d.step()
 
-
-                        x_real, _ = dataloader_real.__next__()
-                        x_real = x_real.to(dev)
-                        x_real = (x_real - 0.5) * 2
-
-                        critic_real, _ = D(x_real, c)
-                        critic_fake, _ = D(fake, c)
-                        d_loss_real, d_loss_fake = loss_hinge_dis(critic_fake, critic_real)
-                        loss_d = (d_loss_real + d_loss_fake) / 2  
-
-                    scalar.scale(loss_d).backward()
-                    scalar.step(optimizer_d)
-                    scalar.update()
-
-            # Generator Loss 
+            # GENERATOR
             optimizer_g.zero_grad()
-            with autocast():
-                fake = EG(x_gray, c, z)
-                loss = 0
-                if args.loss_adv:
-                    critic, _ = D(fake, c)
-                    loss_g = loss_hinge_gen(critic) * args.coef_adv
-                    loss += loss_g 
+            cal_loss_g = lambda: loss_fn_g(EG=EG, D=D, vgg_per=vgg_per,
+                                           x=x, c=c, z=z,
+                                           x_gray=x_gray, args=args)
+            if args.amp:
+                with autocast():
+                    loss, loss_dic = cal_loss_g()
+                scaler.scale(loss).backward()
+                scaler.step(optimizer_g)
+                scaler.update()
+            else:
+                loss, loss_dic = cal_loss_g()
+                loss.backward()
+                optimizer_g.step()
 
-                fake = fake.add(1).div(2)
-                if args.loss_mse:
-                    loss_mse = args.coef_mse * nn.MSELoss()(x, fake)
-                    loss += loss_mse
-                if args.loss_lpips:
-                    loss_lpips = args.coef_lpips * vgg_per(x, fake)
-                    loss += loss_lpips
-
-            scalar.scale(loss).backward()
-            scalar.step(optimizer_g)
-            scalar.update()
-            # loss.backward()
-            # optimizer_g.step()
+            loss_dic['loss_d'] = loss_d
 
             # Logger
             condition = dev == 0 if use_multi_gpu else True
             if num_iter % args.interval_save_loss == 0 and condition:
-                make_log_scalar(writer, num_iter, loss_mse, loss_lpips, loss_d, loss_g)
+                make_log_scalar(writer, num_iter, loss_dic)
             if num_iter % args.interval_save_train == 0 and condition:
                 make_log_img(EG, args.dim_z, writer, args, sample_train,
                         dev, num_iter, 'train')
@@ -505,11 +532,16 @@ def make_log_ckpt(EG, D, args, num_iter, path_ckpts):
     torch.save(EG.state_dict(), path) 
 
 
-def make_log_scalar(writer, num_iter, loss_mse, loss_lpips, loss_d, loss_g):
-    writer.add_scalar('mse', loss_mse.item(), num_iter)
-    writer.add_scalar('lpips', loss_lpips.item(), num_iter)
+def make_log_scalar(writer, num_iter, loss_dic: dict):
+    loss_g = loss_dic['loss_g']
+    loss_d = loss_dic['loss_d']
     writer.add_scalars('GAN loss', 
         {'G': loss_g.item(), 'D': loss_d.item()}, num_iter)
+
+    del loss_dic['loss_g']
+    del loss_dic['loss_d']
+    for key, value in loss_dic.items():
+        writer.add_scalar(key, value.item(), num_iter)
 
 
 def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name):
@@ -527,8 +559,12 @@ def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name):
             c = sample['cs'][id_sample]
             z, x, c = z.to(dev), x.to(dev), c.to(dev)
 
-            with autocast():
+            if args.amp:
+                with autocast():
+                    output = EG(x, c, z)
+            else:
                 output = EG(x, c, z)
+
             output = output.add(1).div(2).detach().cpu()
             output_fusion = lab_fusion(x_gt, output)
             outputs_rgb.append(output)
