@@ -203,6 +203,12 @@ class EncoderF_Res(nn.Module):
                                  is_down=True, 
                                  activation=activation,
                                  norm=norm, 
+                                 **kwargs)
+        # output is  768 x 16 x 16 
+        self.res5 = ResConvBlock(ch_unit * 8, ch_unit * 8,
+                                 is_down=True, 
+                                 activation=activation,
+                                 norm=norm, 
                                  dropout=None,
                                  **kwargs)
 

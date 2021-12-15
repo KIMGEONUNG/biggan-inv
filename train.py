@@ -53,13 +53,13 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='resnet_amp')
+    parser.add_argument('--task_name', default='resnet_c100_v2')
     parser.add_argument('--detail', default='multi gpu')
 
     # Mode
     parser.add_argument('--norm_type', default='adabatch', 
             choices=['instance', 'batch', 'layer', 'adain', 'adabatch'])
-    parser.add_argument('--activation', default='lrelu', 
+    parser.add_argument('--activation', default='relu', 
             choices=['relu', 'lrelu', 'sigmoid'])
     parser.add_argument('--weight_init', default='ortho', 
             choices=['xavier', 'N02', 'ortho', ''])
@@ -74,23 +74,23 @@ def parse_args():
     parser.add_argument('--path_imgnet_val', default='./imgnet/val')
 
     parser.add_argument('--index_target',
-            type=int, nargs='+', default=list(range(20)))
+            type=int, nargs='+', default=list(range(100)))
     parser.add_argument('--num_worker', default=8)
-    parser.add_argument('--iter_sample', default=4)
+    parser.add_argument('--iter_sample', default=3)
 
     # Encoder Traning
     parser.add_argument('--num_layer', default=2)
     parser.add_argument('--num_epoch', default=50)
-    parser.add_argument('--interval_save_loss', default=4)
-    parser.add_argument('--interval_save_train', default=40)
-    parser.add_argument('--interval_save_test', default=400)
+    parser.add_argument('--interval_save_loss', default=20)
+    parser.add_argument('--interval_save_train', default=100)
+    parser.add_argument('--interval_save_test', default=2000)
     parser.add_argument('--interval_save_ckpt', default=4000)
 
     parser.add_argument('--finetune_g', default=True)
     parser.add_argument('--finetune_d', default=True)
 
     # Discriminator Options
-    parser.add_argument('--num_dis', default=1)
+    parser.add_argument('--num_dis', default=2)
 
     # Optimizer
     parser.add_argument("--lr", type=float, default=0.0001)
@@ -99,6 +99,7 @@ def parse_args():
     parser.add_argument("--lr_d", type=float, default=0.00003)
     parser.add_argument("--b1_d", type=float, default=0.0)
     parser.add_argument("--b2_d", type=float, default=0.999)
+    parser.add_argument('--use_schedule', default=True)
 
     # Verbose
     parser.add_argument('--print_config', default=False)
@@ -123,9 +124,11 @@ def parse_args():
     # Others
     parser.add_argument('--dim_z', type=int, default=119)
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--size_batch', default=8)
-    parser.add_argument('--device', default='cuda:3')
-    parser.add_argument('--multi_gpu', default=False)
+    parser.add_argument('--size_batch', default=64)
+
+    # GPU
+    parser.add_argument('--device', default='cuda:0')
+    parser.add_argument('--multi_gpu', default=True)
     parser.add_argument('--amp', default=True)
 
     return parser.parse_args()
@@ -421,10 +424,11 @@ def train(dev, world_size, config, args,
             lr=args.lr_d, betas=(args.b1_d, args.b2_d))
 
     # Schedular
-    scheduler_g = optim.lr_scheduler.LambdaLR(optimizer=optimizer_g,
-                                        lr_lambda=lambda epoch: 0.95 ** epoch)
-    scheduler_d = optim.lr_scheduler.LambdaLR(optimizer=optimizer_d,
-                                        lr_lambda=lambda epoch: 0.95 ** epoch)
+    if args.use_schedule:
+        scheduler_g = optim.lr_scheduler.LambdaLR(optimizer=optimizer_g,
+                                            lr_lambda=lambda epoch: 0.97 ** epoch)
+        scheduler_d = optim.lr_scheduler.LambdaLR(optimizer=optimizer_d,
+                                            lr_lambda=lambda epoch: 0.97 ** epoch)
 
     # Datasets
     sampler, sampler_real = None, None
@@ -522,8 +526,9 @@ def train(dev, world_size, config, args,
                     make_log_ckpt(EG, D, args, num_iter, path_ckpts)
 
             num_iter += 1
-        scheduler_d.step(epoch)
-        scheduler_g.step(epoch)
+        if args.use_schedule:
+            scheduler_d.step(epoch)
+            scheduler_g.step(epoch)
 
 
 def make_log_ckpt(EG, D, args, num_iter, path_ckpts):
