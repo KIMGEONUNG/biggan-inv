@@ -61,6 +61,8 @@ def parse_args():
             choices=['instance', 'batch', 'layer', 'adain', 'adabatch'])
     parser.add_argument('--activation', default='lrelu', 
             choices=['relu', 'lrelu', 'sigmoid'])
+    parser.add_argument('--weight_init', default='ortho', 
+            choices=['xavier', 'N02', 'ortho', ''])
 
     # IO
     parser.add_argument('--path_log', default='runs_res')
@@ -121,9 +123,9 @@ def parse_args():
     # Others
     parser.add_argument('--dim_z', type=int, default=119)
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--size_batch', default=36)
+    parser.add_argument('--size_batch', default=8)
     parser.add_argument('--device', default='cuda:3')
-    parser.add_argument('--multi_gpu', default=True)
+    parser.add_argument('--multi_gpu', default=False)
     parser.add_argument('--amp', default=True)
 
     return parser.parse_args()
@@ -298,13 +300,15 @@ class Colorizer(nn.Module):
                  norm_type,
                  activation='relu',
                  id_mid_layer=2, 
-                 fix_g=False):
+                 fix_g=False,
+                 init_e=None):
         super().__init__()
 
         self.id_mid_layer = id_mid_layer  
 
         self.E = EncoderF_Res(norm=norm_type,
-                              activation=activation)
+                              activation=activation,
+                              init=init_e)
 
         self.G = models.Generator(**config)
         self.G.load_state_dict(torch.load(path_ckpt_g), strict=False)
@@ -382,7 +386,8 @@ def train(dev, world_size, config, args,
                    args.norm_type,
                    id_mid_layer=args.num_layer, 
                    activation=args.activation, 
-                   fix_g=(not args.finetune_g))
+                   fix_g=(not args.finetune_g),
+                   init_e=args.weight_init)
     EG.train()
 
     # Print Architecture

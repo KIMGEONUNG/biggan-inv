@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import functools
+from torch.nn import init
 
 
 class ClassConditionNorm(nn.Module):
@@ -163,8 +164,11 @@ class EncoderF_Res(nn.Module):
                  ch_out=768,
                  ch_unit=96,
                  norm='batch',
-                 activation='relu'):
+                 activation='relu',
+                 init='ortho'):
         super().__init__()
+
+        self.init = init
 
         kwargs = {}
         if activation == 'lrelu':
@@ -202,6 +206,8 @@ class EncoderF_Res(nn.Module):
                                  dropout=None,
                                  **kwargs)
 
+        self.init_weights()
+
     def forward(self, x, c=None):
         x = self.res1(x, c)
         x = self.res2(x, c)
@@ -209,6 +215,19 @@ class EncoderF_Res(nn.Module):
         x = self.res4(x, c)
         x = self.res5(x, c)
         return x
+
+    def init_weights(self):
+        for module in self.modules():
+            if (isinstance(module, nn.Conv2d) or isinstance(module, nn.Linear)
+                    or isinstance(module, nn.Embedding)):
+                if self.init == 'ortho':
+                    init.orthogonal_(module.weight)
+                elif self.init == 'N02':
+                    init.normal_(module.weight, 0, 0.02)
+                elif self.init in ['glorot', 'xavier']:
+                    init.xavier_uniform_(module.weight)
+                else:
+                    print('Init style not recognized...')
 
 
 # z: ([batch, 17])
