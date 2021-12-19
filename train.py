@@ -53,8 +53,8 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='resnet_c100_v2')
-    parser.add_argument('--detail', default='multi gpu')
+    parser.add_argument('--task_name', default='resnet_c100_v3')
+    parser.add_argument('--detail', default='single dis update')
 
     # Mode
     parser.add_argument('--norm_type', default='adabatch', 
@@ -90,7 +90,7 @@ def parse_args():
     parser.add_argument('--finetune_d', default=True)
 
     # Discriminator Options
-    parser.add_argument('--num_dis', default=2)
+    parser.add_argument('--num_dis', default=1)
 
     # Optimizer
     parser.add_argument("--lr", type=float, default=0.0001)
