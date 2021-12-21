@@ -53,7 +53,7 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='resnet_c100_v3')
+    parser.add_argument('--task_name', default='resnet_c100_v4')
     parser.add_argument('--detail', default='single dis update')
 
     # Mode
@@ -333,18 +333,16 @@ class Colorizer(nn.Module):
             super().train(mode)
 
 
-def loss_fn_d(EG, D, c, z, dev, x_gray, x_real):
-    with torch.no_grad():
-        fake = EG(x_gray, c, z)
-    critic_real, _ = D(x_real, c)
+def loss_fn_d(D, c, real, fake):
+    real = (real - 0.5) * 2
+    critic_real, _ = D(real, c)
     critic_fake, _ = D(fake, c)
     d_loss_real, d_loss_fake = loss_hinge_dis(critic_fake, critic_real)
     loss_d = (d_loss_real + d_loss_fake) / 2  
     return loss_d
 
 
-def loss_fn_g(EG, D, vgg_per, x, c, z, x_gray, args):
-    fake = EG(x_gray, c, z)
+def loss_fn_g(D, vgg_per, x, c, args, fake):
     loss_dic = {}
     loss = 0
     if args.loss_adv:
@@ -434,13 +432,6 @@ def train(dev, world_size, config, args,
     sampler, sampler_real = None, None
     if use_multi_gpu:
         sampler = DistributedSampler(dataset)
-        sampler_real = DistributedSampler(dataset)
-
-    dataloader_real = DataLoader(dataset, batch_size=args.size_batch, 
-            shuffle=True if sampler_real is None else False, 
-            sampler=sampler_real, pin_memory=True,
-            num_workers=args.num_worker, drop_last=True)
-    dataloader_real = get_inf_batch(dataloader_real)
 
     dataloader = DataLoader(dataset, batch_size=args.size_batch, 
             shuffle=True if sampler is None else False, 
@@ -468,33 +459,38 @@ def train(dev, world_size, config, args,
             z = torch.zeros((args.size_batch, args.dim_z)).to(dev)
             z.normal_(mean=0, std=0.8)
 
+            # Generate fake image
+            if args.amp:
+                with autocast():
+                    fake = EG(x_gray, c, z)
+            else:
+                fake = EG(x_gray, c, z)
+
             # DISCRIMINATOR 
-            for _ in range(args.num_dis):
-                optimizer_d.zero_grad()
-
-                x_real, c_real = dataloader_real.__next__()
-                x_real, c_real = x_real.to(dev), c_real.to(dev)
-                x_real = (x_real - 0.5) * 2
-
-                cal_loss_d = lambda: loss_fn_d(EG=EG, D=D,
-                                               c=c, z=z, dev=dev,
-                                               x_gray=x_gray, x_real=x_real)
-                if args.amp:
-                    with autocast():
-                        loss_d = cal_loss_d()
-                    scaler.scale(loss_d).backward()
-                    scaler.step(optimizer_d)
-                    scaler.update()
-                else:
-                    loss_d = cal_loss_d() 
-                    loss_d.backward()
-                    optimizer_d.step()
+            optimizer_d.zero_grad()
+            cal_loss_d = lambda: loss_fn_d(D=D,
+                                           c=c,
+                                           real=x,
+                                           fake=fake.detach())
+            if args.amp:
+                with autocast():
+                    loss_d = cal_loss_d()
+                scaler.scale(loss_d).backward()
+                scaler.step(optimizer_d)
+                scaler.update()
+            else:
+                loss_d = cal_loss_d() 
+                loss_d.backward()
+                optimizer_d.step()
 
             # GENERATOR
             optimizer_g.zero_grad()
-            cal_loss_g = lambda: loss_fn_g(EG=EG, D=D, vgg_per=vgg_per,
-                                           x=x, c=c, z=z,
-                                           x_gray=x_gray, args=args)
+            cal_loss_g = lambda: loss_fn_g(D=D,
+                                           vgg_per=vgg_per,
+                                           x=x,
+                                           c=c,
+                                           args=args,
+                                           fake=fake)
             if args.amp:
                 with autocast():
                     loss, loss_dic = cal_loss_g()
