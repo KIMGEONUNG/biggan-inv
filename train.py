@@ -53,8 +53,8 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='resnet_c100_v4')
-    parser.add_argument('--detail', default='single dis update')
+    parser.add_argument('--task_name', default='resnet_c1000_v1')
+    parser.add_argument('--detail', default='class 1000')
 
     # Mode
     parser.add_argument('--norm_type', default='adabatch', 
@@ -74,7 +74,7 @@ def parse_args():
     parser.add_argument('--path_imgnet_val', default='./imgnet/val')
 
     parser.add_argument('--index_target',
-            type=int, nargs='+', default=list(range(100)))
+            type=int, nargs='+', default=list(range(1000)))
     parser.add_argument('--num_worker', default=8)
     parser.add_argument('--iter_sample', default=3)
 
@@ -514,14 +514,15 @@ def train(dev, world_size, config, args,
             if num_iter % args.interval_save_test == 0 and condition:
                 make_log_img(EG, args.dim_z, writer, args, sample_valid,
                         dev, num_iter, 'valid')
-            if num_iter % args.interval_save_ckpt == 0 and condition:
-                if use_multi_gpu:
-                    make_log_ckpt(EG.module, D.module,
-                            args, num_iter, path_ckpts)
-                else:
-                    make_log_ckpt(EG, D, args, num_iter, path_ckpts)
-
             num_iter += 1
+
+        # Save Model
+        if use_multi_gpu:
+            make_log_ckpt(EG.module, D.module,
+                    args, epoch, path_ckpts)
+        else:
+            make_log_ckpt(EG, D, args, epoch, path_ckpts)
+
         if args.use_schedule:
             scheduler_d.step(epoch)
             scheduler_g.step(epoch)
@@ -529,11 +530,11 @@ def train(dev, world_size, config, args,
 
 def make_log_ckpt(EG, D, args, num_iter, path_ckpts):
 
-    name = 'D_%07d.ckpt' % num_iter 
+    name = 'D_%03d.ckpt' % num_iter 
     path = join(path_ckpts, name) 
     torch.save(D.state_dict(), path) 
 
-    name = 'EG_%07d.ckpt' % num_iter 
+    name = 'EG_%03d.ckpt' % num_iter 
     path = join(path_ckpts, name) 
     torch.save(EG.state_dict(), path) 
 
