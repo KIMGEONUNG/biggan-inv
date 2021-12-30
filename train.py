@@ -53,8 +53,8 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='resnet_c1000_v1')
-    parser.add_argument('--detail', default='class 1000')
+    parser.add_argument('--task_name', default='resnet_c1000_v2')
+    parser.add_argument('--detail', default='class 1000 upper colorfullness 15')
 
     # Mode
     parser.add_argument('--norm_type', default='adabatch', 
@@ -80,7 +80,7 @@ def parse_args():
 
     # Encoder Traning
     parser.add_argument('--num_layer', default=2)
-    parser.add_argument('--num_epoch', default=50)
+    parser.add_argument('--num_epoch', default=20)
     parser.add_argument('--interval_save_loss', default=20)
     parser.add_argument('--interval_save_train', default=100)
     parser.add_argument('--interval_save_test', default=2000)
@@ -231,12 +231,7 @@ def prepare_dataset(
         path_train,
         path_valid,
         index_target,
-        prep=transforms.Compose([
-            ToTensor(),
-            transforms.Resize(256),
-            transforms.CenterCrop(256),
-            ])):
-
+        prep):
 
     dataset = ImageFolder(path_train, transform=prep)
     dataset = extract(dataset, index_target)
@@ -424,9 +419,9 @@ def train(dev, world_size, config, args,
     # Schedular
     if args.use_schedule:
         scheduler_g = optim.lr_scheduler.LambdaLR(optimizer=optimizer_g,
-                                            lr_lambda=lambda epoch: 0.97 ** epoch)
+                                            lr_lambda=lambda epoch: 0.90 ** epoch)
         scheduler_d = optim.lr_scheduler.LambdaLR(optimizer=optimizer_d,
-                                            lr_lambda=lambda epoch: 0.97 ** epoch)
+                                            lr_lambda=lambda epoch: 0.90 ** epoch)
 
     # Datasets
     sampler, sampler_real = None, None
@@ -634,8 +629,7 @@ def main():
     print('logger name:', path_log)
     prep = transforms.Compose([
             ToTensor(),
-            transforms.Resize(256),
-            transforms.CenterCrop(256),
+            transforms.Resize((256, 256)),
             ])
 
     # DATASETS
