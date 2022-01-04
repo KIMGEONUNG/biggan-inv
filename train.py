@@ -53,8 +53,8 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='resnet_c1000_v1')
-    parser.add_argument('--detail', default='class 1000')
+    parser.add_argument('--task_name', default='baseline')
+    parser.add_argument('--detail', default='baseline')
 
     # Mode
     parser.add_argument('--norm_type', default='adabatch', 
@@ -65,7 +65,7 @@ def parse_args():
             choices=['xavier', 'N02', 'ortho', ''])
 
     # IO
-    parser.add_argument('--path_log', default='runs_res')
+    parser.add_argument('--path_log', default='runs_refact')
     parser.add_argument('--path_ckpts', default='ckpts')
     parser.add_argument('--path_config', default='config.pickle')
     parser.add_argument('--path_ckpt_g', default='./pretrained/G_ema_256.pth')
@@ -74,13 +74,13 @@ def parse_args():
     parser.add_argument('--path_imgnet_val', default='./imgnet/val')
 
     parser.add_argument('--index_target',
-            type=int, nargs='+', default=list(range(1000)))
+            type=int, nargs='+', default=list(range(50)))
     parser.add_argument('--num_worker', default=8)
     parser.add_argument('--iter_sample', default=3)
 
     # Encoder Traning
     parser.add_argument('--num_layer', default=2)
-    parser.add_argument('--num_epoch', default=50)
+    parser.add_argument('--num_epoch', default=20)
     parser.add_argument('--interval_save_loss', default=20)
     parser.add_argument('--interval_save_train', default=100)
     parser.add_argument('--interval_save_test', default=2000)
