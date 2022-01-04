@@ -26,12 +26,13 @@ from utils.common_utils import (extract_sample, lab_fusion,set_seed,
 from utils.logger import (make_log_scalar, make_log_img, 
                           make_log_ckpt, load_for_retrain)
 import utils
+from torch_ema import ExponentialMovingAverage
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='ratrain_v1')
-    parser.add_argument('--detail', default='mv')
+    parser.add_argument('--task_name', default='ema_v1')
+    parser.add_argument('--detail', default='ema')
 
     # Mode
     parser.add_argument('--norm_type', default='adabatch', 
@@ -176,6 +177,10 @@ def train(dev, world_size, config, args,
     utils.optimizer_to(optimizer_g, 'cuda:%d' % dev)
     utils.optimizer_to(optimizer_d, 'cuda:%d' % dev)
 
+    # EMA
+    ema_g = ExponentialMovingAverage(EG.parameters(), decay=0.995)
+    ema_d = ExponentialMovingAverage(D.parameters(), decay=0.995)
+
     # DDP
     EG = DDP(EG, device_ids=[dev], 
              find_unused_parameters=True)
@@ -223,6 +228,7 @@ def train(dev, world_size, config, args,
             scaler.scale(loss_d).backward()
             scaler.step(optimizer_d)
             scaler.update()
+            ema_d.update()
 
             # GENERATOR
             optimizer_g.zero_grad()
@@ -237,6 +243,7 @@ def train(dev, world_size, config, args,
             scaler.scale(loss).backward()
             scaler.step(optimizer_g)
             scaler.update()
+            ema_g.update()
 
             loss_dic['loss_d'] = loss_d
 
@@ -245,10 +252,10 @@ def train(dev, world_size, config, args,
                 make_log_scalar(writer, num_iter, loss_dic)
             if num_iter % args.interval_save_train == 0 and is_main_dev:
                 make_log_img(EG, args.dim_z, writer, args, sample_train,
-                        dev, num_iter, 'train')
+                        dev, num_iter, 'train', ema=ema_g)
             if num_iter % args.interval_save_test == 0 and is_main_dev:
                 make_log_img(EG, args.dim_z, writer, args, sample_valid,
-                        dev, num_iter, 'valid')
+                        dev, num_iter, 'valid', ema=ema_g)
             num_iter += 1
 
         # Save Model

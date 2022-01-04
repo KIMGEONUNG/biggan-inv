@@ -65,28 +65,29 @@ def make_log_scalar(writer, num_iter, loss_dic: dict):
         writer.add_scalar(key, value.item(), num_iter)
 
 
-def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name):
-    EG.eval()
-
+def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name, ema):
     outputs_rgb = []
     outputs_fusion = []
-    with torch.no_grad():
-        for id_sample in range(len(sample['xs'])):
-            z = torch.zeros((args.size_batch, dim_z))
-            z.normal_(mean=0, std=0.8)
-            x_gt = sample['xs'][id_sample]
+    
+    with ema.average_parameters():
+        EG.eval()
+        with torch.no_grad():
+            for id_sample in range(len(sample['xs'])):
+                z = torch.zeros((args.size_batch, dim_z))
+                z.normal_(mean=0, std=0.8)
+                x_gt = sample['xs'][id_sample]
 
-            x = sample['xs_gray'][id_sample]
-            c = sample['cs'][id_sample]
-            z, x, c = z.to(dev), x.to(dev), c.to(dev)
+                x = sample['xs_gray'][id_sample]
+                c = sample['cs'][id_sample]
+                z, x, c = z.to(dev), x.to(dev), c.to(dev)
 
-            with autocast():
-                output = EG(x, c, z)
+                with autocast():
+                    output = EG(x, c, z)
 
-            output = output.add(1).div(2).detach().cpu()
-            output_fusion = lab_fusion(x_gt, output)
-            outputs_rgb.append(output)
-            outputs_fusion.append(output_fusion)
+                output = output.add(1).div(2).detach().cpu()
+                output_fusion = lab_fusion(x_gt, output)
+                outputs_rgb.append(output)
+                outputs_fusion.append(output_fusion)
 
     grid = make_grid_multi(outputs_rgb, nrow=4)
     writer.add_image('recon_%s_rgb' % name, 
