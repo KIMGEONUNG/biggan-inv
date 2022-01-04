@@ -28,7 +28,7 @@ from utils.logger import make_log_scalar, make_log_img, make_log_ckpt
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='mv 2')
+    parser.add_argument('--task_name', default='port')
     parser.add_argument('--detail', default='mv')
 
     # Mode
@@ -101,6 +101,7 @@ def parse_args():
     parser.add_argument('--dim_z', type=int, default=119)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--size_batch', default=64)
+    parser.add_argument('--port', type=str, default='12355')
 
     # GPU
     parser.add_argument('--device', default='cuda:0')
@@ -110,9 +111,9 @@ def parse_args():
     return parser.parse_args()
 
 
-def setup_dist(rank, world_size):
+def setup_dist(rank, world_size, port):
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
+    os.environ['MASTER_PORT'] = port
 
     # initialize the process group
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
@@ -129,7 +130,7 @@ def train(dev, world_size, config, args,
 
     writer = None
     if use_multi_gpu:
-        setup_dist(dev, world_size)
+        setup_dist(dev, world_size, args.port)
         if dev == 0:
             writer = SummaryWriter(path_log)
     else:
