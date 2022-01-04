@@ -1,121 +1,100 @@
-import argparse
-import logging
-
-import numpy as np
 import torch
+from torch.utils.data import Subset 
 import torchvision.transforms as transforms
-from PIL import Image
-
-import dataset
-
-from .biggan_utils import CenterCropLongEdge
-
-
-
-def save_img(image, path):
-    image = np.uint8(255 * (image.cpu().detach().numpy() + 1) / 2.)
-    image = np.transpose(image, (1, 2, 0))
-    image = Image.fromarray(image)
-    image.save(path)
+from transforms import ToTensor
+from torchvision.datasets import ImageFolder
+from torchvision.utils import make_grid
+from torch.utils.data import DataLoader
+import numpy as np
+from skimage import color
 
 
-def size_splits(tensor, split_sizes, dim=0):
-    """Splits the tensor according to chunks of split_sizes.
 
-    Arguments:
-        tensor (Tensor): tensor to split.
-        split_sizes (list(int)): sizes of chunks
-        dim (int): dimension along which to split the tensor.
-    """
-    if dim < 0:
-        dim += tensor.dim()
-
-    dim_size = tensor.size(dim)
-    if dim_size != torch.sum(torch.Tensor(split_sizes)):
-        raise KeyError("Sum of split sizes exceeds tensor dim")
-
-    splits = torch.cumsum(torch.Tensor([0] + split_sizes), dim=0)[:-1]
-
-    return tuple(
-        tensor.narrow(int(dim), int(start), int(length))
-        for start, length in zip(splits, split_sizes))
+def set_seed(seed):
+    import random
+    import numpy as np
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(seed)
+    random.seed(seed)
 
 
-class LRScheduler(object):
-
-    def __init__(self, optimizer, warm_up):
-        super(LRScheduler, self).__init__()
-        self.optimizer = optimizer
-        self.warm_up = warm_up
-
-    def update(self, iteration, learning_rate, num_group=1000, ratio=1):
-        if iteration < self.warm_up:
-            learning_rate *= iteration / self.warm_up
-        for i, param_group in enumerate(self.optimizer.param_groups):
-            if i >= num_group:
-                param_group['lr'] = 0
-            else:
-                param_group['lr'] = learning_rate * ratio**i
+def get_inf_batch(loader):
+    while True:
+        for x in loader:
+            yield x
 
 
-def create_logger(name, log_file, level=logging.INFO):
-    l = logging.getLogger(name)
-    formatter = logging.Formatter('[%(asctime)s] %(message)s')
-    fh = logging.FileHandler(log_file)
-    fh.setFormatter(formatter)
-    sh = logging.StreamHandler()
-    sh.setFormatter(formatter)
-    l.setLevel(level)
-    l.addHandler(fh)
-    l.addHandler(sh)
-    return l
-
-
-def map_func(storage, location):
-    return storage.cuda()
-
-
-def pil_to_np(img_PIL):
-    '''Converts image in PIL format to np.array.
-
-    From W x H x C [0...255] to C x W x H [0..1]
+def extract(dataset, target_ids):
     '''
-    ar = np.array(img_PIL)
-
-    if len(ar.shape) == 3:
-        ar = ar.transpose(2, 0, 1)
-    else:
-        ar = ar[None, ...]
-
-    return ar.astype(np.float32) / 255.
-
-
-def np_to_pil(img_np):
-    '''Converts image in np.array format to PIL image.
-
-    From C x W x H [0..1] to  W x H x C [0...255]
+    extract data element based on class index
     '''
-    ar = np.clip(img_np * 255, 0, 255).astype(np.uint8)
-
-    if img_np.shape[0] == 1:
-        ar = ar[0]
-    else:
-        ar = ar.transpose(1, 2, 0)
-
-    return Image.fromarray(ar)
+    indices =  []
+    for i in range(len(dataset.targets)):
+        if dataset.targets[i] in target_ids:
+            indices.append(i)
+    return Subset(dataset, indices)
 
 
-def np_to_torch(img_np):
-    '''Converts image in numpy.array to torch.Tensor.
+def prepare_dataset(
+        path_train,
+        path_valid,
+        index_target,
+        prep=transforms.Compose([
+            ToTensor(),
+            transforms.Resize(256),
+            transforms.CenterCrop(256),
+            ])):
 
-    From C x W x H [0..1] to  C x W x H [0..1]
-    '''
-    return torch.from_numpy(img_np)[None, :]
+
+    dataset = ImageFolder(path_train, transform=prep)
+    dataset = extract(dataset, index_target)
+
+    dataset_val = ImageFolder(path_valid, transform=prep)
+    dataset_val = extract(dataset_val, index_target)
+    return dataset, dataset_val
 
 
-def torch_to_np(img_var):
-    '''Converts an image in torch.Tensor format to np.array.
+def extract_sample(dataset, size_batch, num_iter, is_shuffle):
+    dataloader = DataLoader(dataset, batch_size=size_batch,
+            shuffle=is_shuffle, num_workers=4, pin_memory=True,
+            drop_last=True)
+    xs = []
+    xgs = []
+    cs = []
+    for i, (x, c) in enumerate(dataloader):
+        if i >= num_iter:
+            break
+        xg = transforms.Grayscale()(x)
+        xs.append(x), cs.append(c), xgs.append(xg)
+    return {'xs': xs, 'cs': cs, 'xs_gray': xgs}
 
-    From 1 x C x W x H [0..1] to  C x W x H [0..1]
-    '''
-    return img_var.detach().cpu().numpy()[0]
+
+def lab_fusion(x_l, x_ab):
+    labs = []
+    for img_gt, img_hat in zip(x_l, x_ab):
+
+        img_gt = img_gt.permute(1, 2, 0)
+        img_hat = img_hat.permute(1, 2, 0)
+
+        img_gt = color.rgb2lab(img_gt)
+        img_hat = color.rgb2lab(img_hat)
+        
+        l = img_gt[:, :, :1]
+        ab = img_hat[:, :, 1:]
+
+        img_fusion = np.concatenate((l, ab), axis=-1)
+        img_fusion = color.lab2rgb(img_fusion)
+        img_fusion = torch.from_numpy(img_fusion)
+        img_fusion = img_fusion.permute(2, 0, 1)
+        labs.append(img_fusion)
+    labs = torch.stack(labs)
+     
+    return labs
+
+
+def make_grid_multi(xs, nrow=4):
+    return make_grid(torch.cat(xs, dim=0), nrow=nrow)
