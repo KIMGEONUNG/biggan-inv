@@ -28,7 +28,7 @@ from utils.logger import make_log_scalar, make_log_img, make_log_ckpt
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='port')
+    parser.add_argument('--task_name', default='ddp_v1')
     parser.add_argument('--detail', default='mv')
 
     # Mode
@@ -126,14 +126,10 @@ def train(dev, world_size, config, args,
             path_ckpts=None,
             path_log=None,
         ):
-    use_multi_gpu = world_size > 1
 
-    writer = None
-    if use_multi_gpu:
-        setup_dist(dev, world_size, args.port)
-        if dev == 0:
-            writer = SummaryWriter(path_log)
-    else:
+    is_main_dev = dev == 0 
+    setup_dist(dev, world_size, args.port)
+    if is_main_dev:
         writer = SummaryWriter(path_log)
 
     # Setup model
@@ -147,10 +143,7 @@ def train(dev, world_size, config, args,
     EG.train()
 
     # Print Architecture
-    if use_multi_gpu:
-        if dev == 0:
-            print(EG)
-    else:
+    if is_main_dev:
         print(EG)
 
     D = models.Discriminator(**config)
@@ -162,13 +155,14 @@ def train(dev, world_size, config, args,
     vgg_per = VGG16Perceptual(args.path_vgg).to(dev)
     EG = EG.to(dev)
     D = D.to(dev)
-    if use_multi_gpu:
-        EG = DDP(EG, device_ids=[dev], 
-                 find_unused_parameters=True)
-        D = DDP(D, device_ids=[dev], 
-                find_unused_parameters=False)
-        vgg_per = DDP(vgg_per, device_ids=[dev], 
-                      find_unused_parameters=False)
+
+    # DDP
+    EG = DDP(EG, device_ids=[dev], 
+             find_unused_parameters=True)
+    D = DDP(D, device_ids=[dev], 
+            find_unused_parameters=False)
+    vgg_per = DDP(vgg_per, device_ids=[dev], 
+                  find_unused_parameters=False)
 
     # Optimizer
     optimizer_g = optim.Adam([p for p in EG.parameters() if p.requires_grad],
@@ -184,10 +178,7 @@ def train(dev, world_size, config, args,
                                         lr_lambda=lambda epoch: 0.97 ** epoch)
 
     # Datasets
-    sampler, sampler_real = None, None
-    if use_multi_gpu:
-        sampler = DistributedSampler(dataset)
-
+    sampler = DistributedSampler(dataset)
     dataloader = DataLoader(dataset, batch_size=args.size_batch, 
             shuffle=True if sampler is None else False, 
             sampler=sampler, pin_memory=True,
@@ -200,8 +191,7 @@ def train(dev, world_size, config, args,
 
     num_iter = 0
     for epoch in range(args.num_epoch):
-        if use_multi_gpu:
-            sampler.set_epoch(epoch)
+        sampler.set_epoch(epoch)
         tbar = tqdm(dataloader)
         tbar.set_description('epoch: %03d' % epoch)
         for i, (x, c) in enumerate(tbar):
@@ -260,23 +250,19 @@ def train(dev, world_size, config, args,
             loss_dic['loss_d'] = loss_d
 
             # Logger
-            condition = dev == 0 if use_multi_gpu else True
-            if num_iter % args.interval_save_loss == 0 and condition:
+            if num_iter % args.interval_save_loss == 0 and is_main_dev:
                 make_log_scalar(writer, num_iter, loss_dic)
-            if num_iter % args.interval_save_train == 0 and condition:
+            if num_iter % args.interval_save_train == 0 and is_main_dev:
                 make_log_img(EG, args.dim_z, writer, args, sample_train,
                         dev, num_iter, 'train')
-            if num_iter % args.interval_save_test == 0 and condition:
+            if num_iter % args.interval_save_test == 0 and is_main_dev:
                 make_log_img(EG, args.dim_z, writer, args, sample_valid,
                         dev, num_iter, 'valid')
             num_iter += 1
 
         # Save Model
-        if use_multi_gpu:
-            make_log_ckpt(EG.module, D.module,
-                    args, epoch, path_ckpts)
-        else:
-            make_log_ckpt(EG, D, args, epoch, path_ckpts)
+        if is_main_dev:
+            make_log_ckpt(EG.module, D.module, args, epoch, path_ckpts)
 
         if args.use_schedule:
             scheduler_d.step(epoch)
