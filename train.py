@@ -28,7 +28,7 @@ from utils.logger import make_log_scalar, make_log_img, make_log_ckpt
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='ddp_v1')
+    parser.add_argument('--task_name', default='ddp_v2')
     parser.add_argument('--detail', default='mv')
 
     # Mode
@@ -120,12 +120,12 @@ def setup_dist(rank, world_size, port):
 
 
 def train(dev, world_size, config, args,
-            dataset=None,
-            sample_train=None,
-            sample_valid=None,
-            path_ckpts=None,
-            path_log=None,
-        ):
+          dataset=None,
+          sample_train=None,
+          sample_valid=None,
+          path_ckpts=None,
+          path_log=None,
+          ):
 
     is_main_dev = dev == 0 
     setup_dist(dev, world_size, args.port)
@@ -273,15 +273,12 @@ def main():
     args = parse_args()
 
     # GPU OPTIONS
-    use_multi_gpu = False
     num_gpu = torch.cuda.device_count()
     if num_gpu == 0:
         raise Exception('No available GPU')
-    elif num_gpu == 1 or args.multi_gpu == False:
-        dev = args.device 
-        print('Use single GPU:', dev)
-    elif num_gpu > 1 and args.multi_gpu == True:
-        use_multi_gpu = True 
+    elif num_gpu == 1:
+        print('Use single GPU')
+    elif num_gpu > 1: 
         print('Use multi GPU: %02d EA' % num_gpu)
     else:
         raise Exception('Invalid GPU setting')
@@ -313,13 +310,13 @@ def main():
     writer = SummaryWriter(path_log)
     writer.add_text('config', str(args))
     print('logger name:', path_log)
+
+    # DATASETS
     prep = transforms.Compose([
             ToTensor(),
             transforms.Resize(256),
             transforms.CenterCrop(256),
             ])
-
-    # DATASETS
     dataset, dataset_val = prepare_dataset(
             args.path_imgnet_train,
             args.path_imgnet_val,
@@ -327,12 +324,13 @@ def main():
             prep=prep)
 
     is_shuffle = True 
+    args.size_batch = int(args.size_batch / num_gpu)
+    sample_train = extract_sample(dataset, args.size_batch, 
+                                  args.iter_sample, is_shuffle)
+    sample_valid = extract_sample(dataset_val, args.size_batch, 
+                                  args.iter_sample, is_shuffle)
 
-    if use_multi_gpu:
-        args.size_batch = int(args.size_batch / num_gpu)
-    sample_train = extract_sample(dataset, args.size_batch, args.iter_sample, is_shuffle)
-    sample_valid = extract_sample(dataset_val, args.size_batch, args.iter_sample, is_shuffle)
-
+    # Logger
     grid_init = make_grid_multi(sample_train['xs'], nrow=4)
     writer.add_image('GT_train', grid_init)
     grid_init = make_grid_multi(sample_valid['xs'], nrow=4)
@@ -340,20 +338,10 @@ def main():
     writer.flush()
     writer.close()
 
-    if use_multi_gpu:
-        print('Use Multi_GPU')
-        mp.spawn(train,
-            args=(num_gpu, config, args, dataset, sample_train, sample_valid, path_ckpts, path_log),
-            nprocs=num_gpu)
-    else:
-        train(dev, 1, config, args, 
-                dataset=dataset,
-                sample_train=sample_train,
-                sample_valid=sample_valid,
-                path_ckpts=path_ckpts,
-                path_log=path_log
-                )
-
+    mp.spawn(train,
+             args=(num_gpu, config, args, dataset, sample_train, 
+                   sample_valid, path_ckpts, path_log),
+             nprocs=num_gpu)
 
 if __name__ == '__main__':
     main()
