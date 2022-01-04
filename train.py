@@ -23,12 +23,13 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from utils.losses import loss_fn_d, loss_fn_g
 from utils.common_utils import (extract_sample, lab_fusion,set_seed,
         make_grid_multi, prepare_dataset)
-from utils.logger import make_log_scalar, make_log_img, make_log_ckpt
+from utils.logger import (make_log_scalar, make_log_img, 
+                          make_log_ckpt, load_for_retrain)
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='amp_v2')
+    parser.add_argument('--task_name', default='ratrain_v1')
     parser.add_argument('--detail', default='mv')
 
     # Mode
@@ -49,24 +50,23 @@ def parse_args():
     parser.add_argument('--path_imgnet_train', default='./imgnet/train')
     parser.add_argument('--path_imgnet_val', default='./imgnet/val')
 
-    parser.add_argument('--index_target',
-            type=int, nargs='+', default=list(range(50)))
+    parser.add_argument('--index_target', type=int, nargs='+', 
+            default=list(range(10)))
     parser.add_argument('--num_worker', default=8)
     parser.add_argument('--iter_sample', default=3)
 
     # Encoder Traning
+    parser.add_argument('--retrain', action='store_true')
+    parser.add_argument('--retrain_epoch', type=int)
     parser.add_argument('--num_layer', default=2)
     parser.add_argument('--num_epoch', default=20)
     parser.add_argument('--interval_save_loss', default=20)
-    parser.add_argument('--interval_save_train', default=100)
+    parser.add_argument('--interval_save_train', default=50)
     parser.add_argument('--interval_save_test', default=2000)
     parser.add_argument('--interval_save_ckpt', default=4000)
 
     parser.add_argument('--finetune_g', default=True)
     parser.add_argument('--finetune_d', default=True)
-
-    # Discriminator Options
-    parser.add_argument('--num_dis', default=1)
 
     # Optimizer
     parser.add_argument("--lr", type=float, default=0.0001)
@@ -76,12 +76,10 @@ def parse_args():
     parser.add_argument("--b1_d", type=float, default=0.0)
     parser.add_argument("--b2_d", type=float, default=0.999)
     parser.add_argument('--use_schedule', default=True)
+    parser.add_argument('--schedule_decay', type=float, default=0.90)
 
     # Verbose
     parser.add_argument('--print_config', default=False)
-    parser.add_argument('--print_generator', default=True)
-    parser.add_argument('--print_discriminator', default=True)
-    parser.add_argument('--print_encoder', default=True)
 
     # loader
     parser.add_argument('--use_pretrained_g', default=True)
@@ -104,7 +102,6 @@ def parse_args():
     parser.add_argument('--port', type=str, default='12355')
 
     # GPU
-    parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--multi_gpu', default=True)
 
     return parser.parse_args()
@@ -172,10 +169,21 @@ def train(dev, world_size, config, args,
     # Schedular
     if args.use_schedule:
         scheduler_g = optim.lr_scheduler.LambdaLR(optimizer=optimizer_g,
-                                        lr_lambda=lambda epoch: 0.97 ** epoch)
+                        lr_lambda=lambda epoch: args.schedule_decay ** epoch)
         scheduler_d = optim.lr_scheduler.LambdaLR(optimizer=optimizer_d,
-                                        lr_lambda=lambda epoch: 0.97 ** epoch)
+                        lr_lambda=lambda epoch: args.schedule_decay ** epoch)
 
+
+    # Retrain(opt)
+    num_iter = 0
+
+    if args.retrain:
+        if args.retrain_epoch is None:
+            raise Exception('retrain_epoch is required')
+        num_iter = load_for_retrain(EG, D, optimizer_g, optimizer_d,
+                scheduler_g, scheduler_d, args.retrain_epoch, path_ckpts, dev)
+        dist.barrier()
+     
     # Datasets
     sampler = DistributedSampler(dataset)
     dataloader = DataLoader(dataset, batch_size=args.size_batch, 
@@ -186,7 +194,6 @@ def train(dev, world_size, config, args,
     # AMP
     scaler = GradScaler()
 
-    num_iter = 0
     for epoch in range(args.num_epoch):
         sampler.set_epoch(epoch)
         tbar = tqdm(dataloader)
@@ -246,7 +253,14 @@ def train(dev, world_size, config, args,
 
         # Save Model
         if is_main_dev:
-            make_log_ckpt(EG.module, D.module, args, epoch, path_ckpts)
+            make_log_ckpt(EG=EG.module,
+                          D=D.module,
+                          optim_g=optimizer_g,
+                          optim_d=optimizer_d,
+                          schedule_g=scheduler_g,
+                          schedule_d=scheduler_d,
+                          num_iter=num_iter,
+                          args=args, epoch=epoch, path_ckpts=path_ckpts)
 
         if args.use_schedule:
             scheduler_d.step(epoch)
