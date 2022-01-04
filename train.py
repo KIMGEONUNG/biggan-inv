@@ -29,6 +29,8 @@ import torch.multiprocessing as mp
 import torch.distributed as dist 
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+from utils.losses import loss_hinge_dis, loss_hinge_gen
+
 
 """
 # Dimension infos
@@ -53,8 +55,8 @@ LAYER_DIM = {
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='baseline')
-    parser.add_argument('--detail', default='baseline')
+    parser.add_argument('--task_name', default='mv')
+    parser.add_argument('--detail', default='mv')
 
     # Mode
     parser.add_argument('--norm_type', default='adabatch', 
@@ -67,7 +69,8 @@ def parse_args():
     # IO
     parser.add_argument('--path_log', default='runs_refact')
     parser.add_argument('--path_ckpts', default='ckpts')
-    parser.add_argument('--path_config', default='config.pickle')
+    parser.add_argument('--path_config', default='./pretrained/config.pickle')
+    parser.add_argument('--path_vgg', default='./pretrained/vgg16.pickle')
     parser.add_argument('--path_ckpt_g', default='./pretrained/G_ema_256.pth')
     parser.add_argument('--path_ckpt_d', default='./pretrained/D_256.pth')
     parser.add_argument('--path_imgnet_train', default='./imgnet/train')
@@ -136,19 +139,12 @@ def parse_args():
 
 class VGG16Perceptual(nn.Module):
 
-    def __init__(self,
-            resize=True,
-            normalized_input=True,
-            load_pickle=True):
+    def __init__(self, path_vgg: str, resize=True, normalized_input=True):
         super().__init__()
 
-        if load_pickle:
-            import pickle 
-            with open('./vgg16.pickle', 'rb') as f:
-                self.model = pickle.load(f).eval()
-        else:
-            self.model = torch.hub.load('pytorch/vision:v0.8.2', 'vgg16',
-                    pretrained=True).eval()
+        import pickle 
+        with open(path_vgg, 'rb') as f:
+            self.model = pickle.load(f).eval()
 
         self.normalized_intput = normalized_input
         self.idx_targets = [1, 2, 13, 20]
@@ -184,18 +180,6 @@ class VGG16Perceptual(nn.Module):
             loss += feat1.sub(feat2).pow(2).mean()
 
         return loss / size_batch
-
-
-# Hinge Loss
-def loss_hinge_dis(dis_fake, dis_real):
-  loss_real = torch.mean(F.relu(1. - dis_real))
-  loss_fake = torch.mean(F.relu(1. + dis_fake))
-  return loss_real, loss_fake
-
-
-def loss_hinge_gen(dis_fake):
-  loss = -torch.mean(dis_fake)
-  return loss
 
 
 def set_seed(seed):
@@ -404,7 +388,7 @@ def train(dev, world_size, config, args,
         D.load_state_dict(torch.load(args.path_ckpt_d), strict=False)
 
     # Load model
-    vgg_per = VGG16Perceptual().to(dev)
+    vgg_per = VGG16Perceptual(args.path_vgg).to(dev)
     EG = EG.to(dev)
     D = D.to(dev)
     if use_multi_gpu:
