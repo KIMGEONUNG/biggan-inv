@@ -1,11 +1,10 @@
 import os
 from os.path import join, exists
 import models
-from encoders import EncoderF_Res
+from models import Colorizer, VGG16Perceptual
 
 from torch.utils.tensorboard import SummaryWriter
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data.dataloader import DataLoader 
 from torch.utils.data.distributed import DistributedSampler
@@ -21,35 +20,15 @@ import torch.multiprocessing as mp
 import torch.distributed as dist 
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from utils.losses import loss_hinge_dis, loss_hinge_gen
+from utils.losses import loss_fn_d, loss_fn_g
 from utils.common_utils import (extract_sample, lab_fusion,set_seed,
         make_grid_multi, prepare_dataset)
+from utils.logger import make_log_scalar, make_log_img, make_log_ckpt
 
-
-"""
-# Dimension infos
-    z: ([8, 17])
-    h: ([8, 24576])
-    index 0 : ([8, 1536, 4, 4])
-    index 1 : ([8, 1536, 8, 8])
-    index 2 : ([8, 768, 16, 16])
-    index 3 : ([8, 768, 32, 32])
-    index 4 : ([8, 384, 64, 64])
-    index 5 : ([8, 192, 128, 128])
-    result: ([8, 96, 256, 256])
-"""
-LAYER_DIM = {
-        0: [1536, 4],
-        1: [1536, 8],
-        2: [768, 16],
-        3: [768, 32],
-        4: [384, 64],
-        4: [192, 128],
-        }
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='mv')
+    parser.add_argument('--task_name', default='mv 2')
     parser.add_argument('--detail', default='mv')
 
     # Mode
@@ -131,125 +110,12 @@ def parse_args():
     return parser.parse_args()
 
 
-class VGG16Perceptual(nn.Module):
-
-    def __init__(self, path_vgg: str, resize=True, normalized_input=True):
-        super().__init__()
-
-        import pickle 
-        with open(path_vgg, 'rb') as f:
-            self.model = pickle.load(f).eval()
-
-        self.normalized_intput = normalized_input
-        self.idx_targets = [1, 2, 13, 20]
-
-        preprocess = []
-        if resize:
-            preprocess.append(transforms.Resize(256))
-            preprocess.append(transforms.CenterCrop(224))
-        if normalized_input:
-            preprocess.append(transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                std=[0.229, 0.224, 0.225]))
-
-        self.preprocess = transforms.Compose(preprocess)
-
-    def get_mid_feats(self, x):
-        x = self.preprocess(x)
-        feats = []
-        for i, layer in enumerate(self.model.features[:max(self.idx_targets) + 1]):
-            x = layer(x)
-            if i in self.idx_targets:
-                feats.append(x)
-
-        return feats
-
-
-    def forward(self, x1, x2):
-        size_batch = x1.shape[0]
-        x1_feats = self.preprocess(x1)
-        x2_feats = self.preprocess(x2)
-
-        loss = 0
-        for feat1, feat2 in zip(x1_feats, x2_feats):
-            loss += feat1.sub(feat2).pow(2).mean()
-
-        return loss / size_batch
-
-
 def setup_dist(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12355'
 
     # initialize the process group
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
-
-
-class Colorizer(nn.Module):
-    def __init__(self, 
-                 config, 
-                 path_ckpt_g, 
-                 norm_type,
-                 activation='relu',
-                 id_mid_layer=2, 
-                 fix_g=False,
-                 init_e=None):
-        super().__init__()
-
-        self.id_mid_layer = id_mid_layer  
-
-        self.E = EncoderF_Res(norm=norm_type,
-                              activation=activation,
-                              init=init_e)
-
-        self.G = models.Generator(**config)
-        self.G.load_state_dict(torch.load(path_ckpt_g), strict=False)
-        self.fix_g = fix_g
-        if fix_g:
-            for p in self.G.parameters():
-                p.requires_grad = False
-
-    def forward(self, x_gray, c, z):
-        f = self.E(x_gray, self.G.shared(c)) 
-        output = self.G.forward_from(z, self.G.shared(c), 
-                self.id_mid_layer, f)
-        return output
-
-    def train(self, mode=True):
-        if self.fix_g:
-            self.E.train(mode)
-        else:
-            super().train(mode)
-
-
-def loss_fn_d(D, c, real, fake):
-    real = (real - 0.5) * 2
-    critic_real, _ = D(real, c)
-    critic_fake, _ = D(fake, c)
-    d_loss_real, d_loss_fake = loss_hinge_dis(critic_fake, critic_real)
-    loss_d = (d_loss_real + d_loss_fake) / 2  
-    return loss_d
-
-
-def loss_fn_g(D, vgg_per, x, c, args, fake):
-    loss_dic = {}
-    loss = 0
-    if args.loss_adv:
-        critic, _ = D(fake, c)
-        loss_g = loss_hinge_gen(critic) * args.coef_adv
-        loss += loss_g 
-        loss_dic['loss_g'] = loss_g 
-
-    fake = fake.add(1).div(2)
-    if args.loss_mse:
-        loss_mse = args.coef_mse * nn.MSELoss()(x, fake)
-        loss += loss_mse
-        loss_dic['mse'] = loss_mse
-    if args.loss_lpips:
-        loss_lpips = args.coef_lpips * vgg_per(x, fake)
-        loss += loss_lpips
-        loss_dic['lpips'] = loss_lpips
-
-    return loss, loss_dic
 
 
 def train(dev, world_size, config, args,
@@ -312,9 +178,9 @@ def train(dev, world_size, config, args,
     # Schedular
     if args.use_schedule:
         scheduler_g = optim.lr_scheduler.LambdaLR(optimizer=optimizer_g,
-                                            lr_lambda=lambda epoch: 0.97 ** epoch)
+                                        lr_lambda=lambda epoch: 0.97 ** epoch)
         scheduler_d = optim.lr_scheduler.LambdaLR(optimizer=optimizer_d,
-                                            lr_lambda=lambda epoch: 0.97 ** epoch)
+                                        lr_lambda=lambda epoch: 0.97 ** epoch)
 
     # Datasets
     sampler, sampler_real = None, None
@@ -414,66 +280,6 @@ def train(dev, world_size, config, args,
         if args.use_schedule:
             scheduler_d.step(epoch)
             scheduler_g.step(epoch)
-
-
-def make_log_ckpt(EG, D, args, num_iter, path_ckpts):
-
-    name = 'D_%03d.ckpt' % num_iter 
-    path = join(path_ckpts, name) 
-    torch.save(D.state_dict(), path) 
-
-    name = 'EG_%03d.ckpt' % num_iter 
-    path = join(path_ckpts, name) 
-    torch.save(EG.state_dict(), path) 
-
-
-def make_log_scalar(writer, num_iter, loss_dic: dict):
-    loss_g = loss_dic['loss_g']
-    loss_d = loss_dic['loss_d']
-    writer.add_scalars('GAN loss', 
-        {'G': loss_g.item(), 'D': loss_d.item()}, num_iter)
-
-    del loss_dic['loss_g']
-    del loss_dic['loss_d']
-    for key, value in loss_dic.items():
-        writer.add_scalar(key, value.item(), num_iter)
-
-
-def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name):
-    EG.eval()
-
-    outputs_rgb = []
-    outputs_fusion = []
-    with torch.no_grad():
-        for id_sample in range(len(sample['xs'])):
-            z = torch.zeros((args.size_batch, dim_z))
-            z.normal_(mean=0, std=0.8)
-            x_gt = sample['xs'][id_sample]
-
-            x = sample['xs_gray'][id_sample]
-            c = sample['cs'][id_sample]
-            z, x, c = z.to(dev), x.to(dev), c.to(dev)
-
-            if args.amp:
-                with autocast():
-                    output = EG(x, c, z)
-            else:
-                output = EG(x, c, z)
-
-            output = output.add(1).div(2).detach().cpu()
-            output_fusion = lab_fusion(x_gt, output)
-            outputs_rgb.append(output)
-            outputs_fusion.append(output_fusion)
-
-    grid = make_grid_multi(outputs_rgb, nrow=4)
-    writer.add_image('recon_%s_rgb' % name, 
-            grid, num_iter)
-
-    grid = make_grid_multi(outputs_fusion, nrow=4)
-    writer.add_image('recon_%s_fusion' % name, 
-            grid, num_iter)
-
-    writer.flush()
 
 
 def main():

@@ -1,13 +1,22 @@
 import torch
 from torch.utils.data import Subset 
 import torchvision.transforms as transforms
-from transforms import ToTensor
+from torchvision.transforms import ToTensor
 from torchvision.datasets import ImageFolder
 from torchvision.utils import make_grid
 from torch.utils.data import DataLoader
 import numpy as np
 from skimage import color
 
+
+LAYER_DIM = {
+        0: [1536, 4],
+        1: [1536, 8],
+        2: [768, 16],
+        3: [768, 32],
+        4: [384, 64],
+        4: [192, 128],
+        }
 
 
 def set_seed(seed):
