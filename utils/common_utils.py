@@ -37,6 +37,9 @@ def get_inf_batch(loader):
             yield x
 
 
+# def change_buff_type(model, t)
+
+
 def extract(dataset, target_ids):
     '''
     extract data element based on class index

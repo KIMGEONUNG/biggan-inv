@@ -28,7 +28,7 @@ from utils.logger import make_log_scalar, make_log_img, make_log_ckpt
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='ddp_v2')
+    parser.add_argument('--task_name', default='amp_v2')
     parser.add_argument('--detail', default='mv')
 
     # Mode
@@ -106,7 +106,6 @@ def parse_args():
     # GPU
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--multi_gpu', default=True)
-    parser.add_argument('--amp', default=True)
 
     return parser.parse_args()
 
@@ -185,9 +184,7 @@ def train(dev, world_size, config, args,
             num_workers=args.num_worker, drop_last=True)
 
     # AMP
-    scaler = None
-    if args.amp:
-        scaler = GradScaler()
+    scaler = GradScaler()
 
     num_iter = 0
     for epoch in range(args.num_epoch):
@@ -205,10 +202,7 @@ def train(dev, world_size, config, args,
             z.normal_(mean=0, std=0.8)
 
             # Generate fake image
-            if args.amp:
-                with autocast():
-                    fake = EG(x_gray, c, z)
-            else:
+            with autocast():
                 fake = EG(x_gray, c, z)
 
             # DISCRIMINATOR 
@@ -217,16 +211,11 @@ def train(dev, world_size, config, args,
                                            c=c,
                                            real=x,
                                            fake=fake.detach())
-            if args.amp:
-                with autocast():
-                    loss_d = cal_loss_d()
-                scaler.scale(loss_d).backward()
-                scaler.step(optimizer_d)
-                scaler.update()
-            else:
-                loss_d = cal_loss_d() 
-                loss_d.backward()
-                optimizer_d.step()
+            with autocast():
+                loss_d = cal_loss_d()
+            scaler.scale(loss_d).backward()
+            scaler.step(optimizer_d)
+            scaler.update()
 
             # GENERATOR
             optimizer_g.zero_grad()
@@ -236,16 +225,11 @@ def train(dev, world_size, config, args,
                                            c=c,
                                            args=args,
                                            fake=fake)
-            if args.amp:
-                with autocast():
-                    loss, loss_dic = cal_loss_g()
-                scaler.scale(loss).backward()
-                scaler.step(optimizer_g)
-                scaler.update()
-            else:
+            with autocast():
                 loss, loss_dic = cal_loss_g()
-                loss.backward()
-                optimizer_g.step()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer_g)
+            scaler.update()
 
             loss_dic['loss_d'] = loss_d
 

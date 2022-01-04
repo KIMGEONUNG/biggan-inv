@@ -3,6 +3,7 @@ from os.path import join
 from .common_utils import lab_fusion, make_grid_multi
 from torch.cuda.amp import autocast
 
+
 def make_log_ckpt(EG, D, args, num_iter, path_ckpts):
 
     name = 'D_%03d.ckpt' % num_iter 
@@ -41,10 +42,7 @@ def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name):
             c = sample['cs'][id_sample]
             z, x, c = z.to(dev), x.to(dev), c.to(dev)
 
-            if args.amp:
-                with autocast():
-                    output = EG(x, c, z)
-            else:
+            with autocast():
                 output = EG(x, c, z)
 
             output = output.add(1).div(2).detach().cpu()
