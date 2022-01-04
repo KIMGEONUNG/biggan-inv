@@ -25,6 +25,7 @@ from utils.common_utils import (extract_sample, lab_fusion,set_seed,
         make_grid_multi, prepare_dataset)
 from utils.logger import (make_log_scalar, make_log_img, 
                           make_log_ckpt, load_for_retrain)
+import utils
 
 
 def parse_args():
@@ -98,7 +99,7 @@ def parse_args():
     # Others
     parser.add_argument('--dim_z', type=int, default=119)
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--size_batch', default=64)
+    parser.add_argument('--size_batch', default=60)
     parser.add_argument('--port', type=str, default='12355')
 
     # GPU
@@ -137,28 +138,11 @@ def train(dev, world_size, config, args,
                    fix_g=(not args.finetune_g),
                    init_e=args.weight_init)
     EG.train()
-
-    # Print Architecture
-    if is_main_dev:
-        print(EG)
-
     D = models.Discriminator(**config)
     D.train()
     if args.use_pretrained_d:
-        D.load_state_dict(torch.load(args.path_ckpt_d), strict=False)
-
-    # Load model
-    vgg_per = VGG16Perceptual(args.path_vgg).to(dev)
-    EG = EG.to(dev)
-    D = D.to(dev)
-
-    # DDP
-    EG = DDP(EG, device_ids=[dev], 
-             find_unused_parameters=True)
-    D = DDP(D, device_ids=[dev], 
-            find_unused_parameters=False)
-    vgg_per = DDP(vgg_per, device_ids=[dev], 
-                  find_unused_parameters=False)
+        D.load_state_dict(torch.load(args.path_ckpt_d, map_location='cpu'),
+                          strict=False)
 
     # Optimizer
     optimizer_g = optim.Adam([p for p in EG.parameters() if p.requires_grad],
@@ -173,16 +157,32 @@ def train(dev, world_size, config, args,
         scheduler_d = optim.lr_scheduler.LambdaLR(optimizer=optimizer_d,
                         lr_lambda=lambda epoch: args.schedule_decay ** epoch)
 
-
     # Retrain(opt)
     num_iter = 0
-
+    epoch_start = 0
     if args.retrain:
         if args.retrain_epoch is None:
             raise Exception('retrain_epoch is required')
+        epoch_start = args.retrain_epoch + 1
         num_iter = load_for_retrain(EG, D, optimizer_g, optimizer_d,
-                scheduler_g, scheduler_d, args.retrain_epoch, path_ckpts, dev)
+                scheduler_g, scheduler_d, args.retrain_epoch, path_ckpts, 
+                'cpu')
         dist.barrier()
+
+    # Set Device 
+    EG = EG.to(dev)
+    D = D.to(dev)
+    vgg_per = VGG16Perceptual(args.path_vgg).to(dev)
+    utils.optimizer_to(optimizer_g, 'cuda:%d' % dev)
+    utils.optimizer_to(optimizer_d, 'cuda:%d' % dev)
+
+    # DDP
+    EG = DDP(EG, device_ids=[dev], 
+             find_unused_parameters=True)
+    D = DDP(D, device_ids=[dev], 
+            find_unused_parameters=False)
+    vgg_per = DDP(vgg_per, device_ids=[dev], 
+                  find_unused_parameters=False)
      
     # Datasets
     sampler = DistributedSampler(dataset)
@@ -194,7 +194,7 @@ def train(dev, world_size, config, args,
     # AMP
     scaler = GradScaler()
 
-    for epoch in range(args.num_epoch):
+    for epoch in range(epoch_start, args.num_epoch):
         sampler.set_epoch(epoch)
         tbar = tqdm(dataloader)
         tbar.set_description('epoch: %03d' % epoch)

@@ -25,28 +25,30 @@ def make_log_ckpt(EG, D, optim_g, optim_d, schedule_g, schedule_d, num_iter,
                 'schedule_d': schedule_d.state_dict(),
                 'num_iter': num_iter}, path)
 
+
 def load_for_retrain(EG, D, optim_g, optim_d, schedule_g, schedule_d, 
                      epoch, path_ckpts, dev):
     # Encoder&Generator
-    name = 'D_%03d.ckpt' % epoch 
+    name = 'EG_%03d.ckpt' % epoch 
     path = join(path_ckpts, name) 
     state = torch.load(path, map_location=dev)
     EG.load_state_dict(state)
 
     # Discriminator
-    name = 'EG_%03d.ckpt' % epoch 
+    name = 'D_%03d.ckpt' % epoch 
     path = join(path_ckpts, name) 
     state = torch.load(path, map_location=dev)
     D.load_state_dict(state)
 
+
     # Oters
     name = 'OTHER_%03d.ckpt' % epoch 
     path = join(path_ckpts, name) 
-    state = torch.load(path)
-    optim_g.load(state['optim_g'])
-    optim_d.load(state['optim_d'])
-    schedule_g.load(state['schedule_g'])
-    schedule_d.load(state['schedule_d'])
+    state = torch.load(path, map_location=dev)
+    optim_g.load_state_dict(state['optim_g'])
+    optim_d.load_state_dict(state['optim_d'])
+    schedule_g.load_state_dict(state['schedule_g'])
+    schedule_d.load_state_dict(state['schedule_d'])
 
     return state['num_iter']
 

@@ -67,7 +67,8 @@ class Colorizer(nn.Module):
                               init=init_e)
 
         self.G = Generator(**config)
-        self.G.load_state_dict(torch.load(path_ckpt_g), strict=False)
+        self.G.load_state_dict(torch.load(path_ckpt_g, map_location='cpu'),
+                               strict=False)
         self.fix_g = fix_g
         if fix_g:
             for p in self.G.parameters():
