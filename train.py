@@ -31,7 +31,7 @@ from torch_ema import ExponentialMovingAverage
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='ema_v2')
+    parser.add_argument('--task_name', default='baseline_100')
     parser.add_argument('--detail', default='ema')
 
     # Mode
@@ -53,7 +53,7 @@ def parse_args():
     parser.add_argument('--path_imgnet_val', default='./imgnet/val')
 
     parser.add_argument('--index_target', type=int, nargs='+', 
-            default=list(range(10)))
+            default=list(range(100)))
     parser.add_argument('--num_worker', default=8)
     parser.add_argument('--iter_sample', default=3)
 
@@ -63,7 +63,7 @@ def parse_args():
     parser.add_argument('--num_layer', default=2)
     parser.add_argument('--num_epoch', default=20)
     parser.add_argument('--interval_save_loss', default=20)
-    parser.add_argument('--interval_save_train', default=50)
+    parser.add_argument('--interval_save_train', default=150)
     parser.add_argument('--interval_save_test', default=2000)
     parser.add_argument('--interval_save_ckpt', default=4000)
 
@@ -91,11 +91,13 @@ def parse_args():
     parser.add_argument('--loss_mse', action='store_true', default=True)
     parser.add_argument('--loss_lpips', action='store_true', default=True)
     parser.add_argument('--loss_adv', action='store_true', default=True)
-
-    # Loss coef
     parser.add_argument('--coef_mse', type=float, default=1.0)
     parser.add_argument('--coef_lpips', type=float, default=0.2)
     parser.add_argument('--coef_adv', type=float, default=0.03)
+
+    # EMA
+    parser.add_argument('--decay_ema_g', type=float, default=0.999)
+    parser.add_argument('--decay_ema_d', type=float, default=0.999)
 
     # Others
     parser.add_argument('--dim_z', type=int, default=119)
@@ -178,8 +180,8 @@ def train(dev, world_size, config, args,
     utils.optimizer_to(optimizer_d, 'cuda:%d' % dev)
 
     # EMA
-    ema_g = ExponentialMovingAverage(EG.parameters(), decay=0.995)
-    ema_d = ExponentialMovingAverage(D.parameters(), decay=0.995)
+    ema_g = ExponentialMovingAverage(EG.parameters(), decay=args.decay_ema_g)
+    ema_d = ExponentialMovingAverage(D.parameters(), decay=args.decay_ema_d)
 
     # DDP
     EG = DDP(EG, device_ids=[dev], 
@@ -253,12 +255,23 @@ def train(dev, world_size, config, args,
             # Logger
             if num_iter % args.interval_save_loss == 0 and is_main_dev:
                 make_log_scalar(writer, num_iter, loss_dic)
+
             if num_iter % args.interval_save_train == 0 and is_main_dev:
                 make_log_img(EG, args.dim_z, writer, args, sample_train,
-                        dev, num_iter, 'train', ema=ema_g)
+                        dev, num_iter, 'train')
+
             if num_iter % args.interval_save_test == 0 and is_main_dev:
                 make_log_img(EG, args.dim_z, writer, args, sample_valid,
-                        dev, num_iter, 'valid', ema=ema_g)
+                        dev, num_iter, 'valid')
+
+            if num_iter % args.interval_save_train == 0 and is_main_dev:
+                make_log_img(EG, args.dim_z, writer, args, sample_train,
+                        dev, num_iter, 'train_ema', ema=ema_g)
+
+            if num_iter % args.interval_save_test == 0 and is_main_dev:
+                make_log_img(EG, args.dim_z, writer, args, sample_valid,
+                        dev, num_iter, 'valid_ema', ema=ema_g)
+
             num_iter += 1
 
         # Save Model
@@ -269,6 +282,8 @@ def train(dev, world_size, config, args,
                           optim_d=optimizer_d,
                           schedule_g=scheduler_g,
                           schedule_d=scheduler_d,
+                          ema_g=ema_g,
+                          ema_d=ema_d,
                           num_iter=num_iter,
                           args=args, epoch=epoch, path_ckpts=path_ckpts)
 
