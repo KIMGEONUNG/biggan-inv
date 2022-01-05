@@ -31,7 +31,7 @@ from torch_ema import ExponentialMovingAverage
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='ema_v1')
+    parser.add_argument('--task_name', default='ema_v2')
     parser.add_argument('--detail', default='ema')
 
     # Mode
@@ -228,7 +228,6 @@ def train(dev, world_size, config, args,
             scaler.scale(loss_d).backward()
             scaler.step(optimizer_d)
             scaler.update()
-            ema_d.update()
 
             # GENERATOR
             optimizer_g.zero_grad()
@@ -243,7 +242,11 @@ def train(dev, world_size, config, args,
             scaler.scale(loss).backward()
             scaler.step(optimizer_g)
             scaler.update()
-            ema_g.update()
+
+            # EMA
+            if is_main_dev:
+                ema_d.update()
+                ema_g.update()
 
             loss_dic['loss_d'] = loss_d
 
