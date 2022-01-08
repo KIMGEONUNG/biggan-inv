@@ -233,7 +233,8 @@ class EncoderF_Res(nn.Module):
                 elif self.init in ['glorot', 'xavier']:
                     init.xavier_uniform_(module.weight)
                 else:
-                    print('Init style not recognized...')
+                    pass
+                    # print('Init style not recognized...')
 
 
 # z: ([batch, 17])

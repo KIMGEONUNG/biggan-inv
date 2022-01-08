@@ -31,7 +31,7 @@ from torch_ema import ExponentialMovingAverage
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='baseline_100')
+    parser.add_argument('--task_name', default='baseline_1000')
     parser.add_argument('--detail', default='ema')
 
     # Mode
@@ -53,7 +53,7 @@ def parse_args():
     parser.add_argument('--path_imgnet_val', default='./imgnet/val')
 
     parser.add_argument('--index_target', type=int, nargs='+', 
-            default=list(range(100)))
+            default=list(range(1000)))
     parser.add_argument('--num_worker', default=8)
     parser.add_argument('--iter_sample', default=3)
 

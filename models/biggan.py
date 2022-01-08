@@ -271,7 +271,8 @@ class Generator(nn.Module):
                 elif self.init in ['glorot', 'xavier']:
                     init.xavier_uniform_(module.weight)
                 else:
-                    print('Init style not recognized...')
+                    # print('Init style not recognized...')
+                    pass
                 self.param_count += sum([p.data.nelement() for p in module.parameters()])
         print('Param count for G' 's initialized parameters: %d' % self.param_count)
 
@@ -633,7 +634,8 @@ class Discriminator(nn.Module):
                 elif self.init in ['glorot', 'xavier']:
                     init.xavier_uniform_(module.weight)
                 else:
-                    print('Init style not recognized...')
+                    pass
+                    # print('Init style not recognized...')
                 self.param_count += sum([p.data.nelement() for p in module.parameters()])
         print('Param count for D' 's initialized parameters: %d' % self.param_count)
 

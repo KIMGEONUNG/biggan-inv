@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 from torch.utils.data import Subset 
 import torchvision.transforms as transforms
 from torchvision.transforms import ToTensor
@@ -52,7 +53,10 @@ def get_inf_batch(loader):
             yield x
 
 
-# def change_buff_type(model, t)
+def copy_buff(m_from: nn.Module, m_to: nn.Module):
+    for (k1, v1), (k2, v2) in zip(m_from.named_buffers(), m_to.named_buffers()):
+        assert k1 == k2
+        v2.copy_(v1)
 
 
 def extract(dataset, target_ids):

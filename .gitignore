@@ -19,3 +19,4 @@ validation_f_16/
 ckpts/
 *.pickle
 out_*
+results*
