@@ -39,7 +39,8 @@ def make_log_ckpt(EG, D,
                 'num_iter': num_iter}, path)
 
 
-def load_for_retrain(EG, D, optim_g, optim_d, schedule_g, schedule_d, 
+def load_for_retrain(EG, D,
+                     optim_g, optim_d, schedule_g, schedule_d, 
                      epoch, path_ckpts, dev):
     # Encoder&Generator
     name = 'EG_%03d.ckpt' % epoch 
@@ -63,6 +64,19 @@ def load_for_retrain(EG, D, optim_g, optim_d, schedule_g, schedule_d,
     schedule_d.load_state_dict(state['schedule_d'])
 
     return state['num_iter']
+
+def load_for_retrain_EMA(ema_g, ema_d, epoch, path_ckpts, dev):
+    # Encoder&Generator
+    name = 'EG_EMA_%03d.ckpt' % epoch 
+    path = join(path_ckpts, name) 
+    state = torch.load(path, map_location=dev)
+    ema_g.load_state_dict(state)
+
+    # Discriminator
+    name = 'D_EMA_%03d.ckpt' % epoch 
+    path = join(path_ckpts, name) 
+    state = torch.load(path, map_location=dev)
+    ema_d.load_state_dict(state)
 
 
 def make_log_scalar(writer, num_iter, loss_dic: dict):

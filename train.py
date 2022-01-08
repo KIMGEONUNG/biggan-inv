@@ -24,7 +24,8 @@ from utils.losses import loss_fn_d, loss_fn_g
 from utils.common_utils import (extract_sample, lab_fusion,set_seed,
         make_grid_multi, prepare_dataset)
 from utils.logger import (make_log_scalar, make_log_img, 
-                          make_log_ckpt, load_for_retrain)
+                          make_log_ckpt, load_for_retrain,
+                          load_for_retrain_EMA)
 import utils
 from torch_ema import ExponentialMovingAverage
 
@@ -167,9 +168,11 @@ def train(dev, world_size, config, args,
         if args.retrain_epoch is None:
             raise Exception('retrain_epoch is required')
         epoch_start = args.retrain_epoch + 1
-        num_iter = load_for_retrain(EG, D, optimizer_g, optimizer_d,
-                scheduler_g, scheduler_d, args.retrain_epoch, path_ckpts, 
-                'cpu')
+        num_iter = load_for_retrain(EG, D, 
+                                    optimizer_g, optimizer_d,
+                                    scheduler_g, scheduler_d, 
+                                    args.retrain_epoch, path_ckpts, 
+                                    'cpu')
         dist.barrier()
 
     # Set Device 
@@ -182,6 +185,9 @@ def train(dev, world_size, config, args,
     # EMA
     ema_g = ExponentialMovingAverage(EG.parameters(), decay=args.decay_ema_g)
     ema_d = ExponentialMovingAverage(D.parameters(), decay=args.decay_ema_d)
+    if args.retrain:
+        load_for_retrain_EMA(ema_g, ema_d,
+                             args.retrain_epoch, path_ckpts, 'cpu')
 
     # DDP
     EG = DDP(EG, device_ids=[dev], 
@@ -294,6 +300,10 @@ def train(dev, world_size, config, args,
 
 def main():
     args = parse_args()
+
+    # Note Retrain
+    if args.retrain:
+        print("This is retrain work after EPOCH %03d" % args.retrain_epoch)
 
     # GPU OPTIONS
     num_gpu = torch.cuda.device_count()
