@@ -108,6 +108,8 @@ def parse_args():
     parser.add_argument('--size_batch', default=60)
     parser.add_argument('--port', type=str, default='12355')
     parser.add_argument('--no_augment', action='store_true')
+    parser.add_argument('--coef_enhance', type=float, default=1.5)
+    parser.add_argument('--use_attention', action='store_true')
 
     # GPU
     parser.add_argument('--multi_gpu', default=True)
@@ -207,7 +209,7 @@ def train(dev, world_size, config, args,
             sampler=sampler, pin_memory=True,
             num_workers=args.num_worker, drop_last=True)
 
-    color_enhance = ColorEnhance()
+    color_enhance = ColorEnhance(factor=args.coef_enhance)
 
     # AMP
     scaler = GradScaler()
