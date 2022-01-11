@@ -28,11 +28,11 @@ def parse():
     # I/O
     parser.add_argument('--path_config', default='./pretrained/config.pickle')
     parser.add_argument('--path_ckpt_g', default='./pretrained/G_ema_256.pth')
-    parser.add_argument('--path_ckpt', default='./ckpts/baseline_100')
+    parser.add_argument('--path_ckpt', default='./ckpts/baseline_1000')
     parser.add_argument('--path_output', default='./results')
     parser.add_argument('--path_imgnet_train', default='./imgnet/train')
     parser.add_argument('--path_imgnet_val', default='./imgnet/val')
-    parser.add_argument('--use_ema', default=True)
+    parser.add_argument('--use_ema', action='store_true')
 
     parser.add_argument('--num_layer', default=2)
     parser.add_argument('--norm_type', default='instance', 
@@ -81,13 +81,14 @@ def main(args):
     if args.seed >= 0:
         set_seed(args.seed)
 
+    print('Target Epoch is %03d' % args.epoch)
+
     path_eg = join(args.path_ckpt, 'EG_%03d.ckpt' % args.epoch)
     path_eg_ema = join(args.path_ckpt, 'EG_EMA_%03d.ckpt' % args.epoch)
     path_args = join(args.path_ckpt, 'args.pkl')
 
     if not exists(path_eg):
         raise FileNotFoundError(path_eg)
-
     if not exists(path_args):
         raise FileNotFoundError(path_args)
 
@@ -102,8 +103,8 @@ def main(args):
     grays = ImageFolder(args.path_imgnet_val,
                         transform=transforms.Compose([
                             transforms.ToTensor(),
-                            transforms.Resize(size_target),
-                            transforms.CenterCrop(size_target),
+                            # transforms.Resize(size_target),
+                            # transforms.CenterCrop(size_target),
                             transforms.Grayscale()]))
 
     EG = Colorizer(config, args.path_ckpt_g, args_loaded.norm_type,
@@ -117,6 +118,7 @@ def main(args):
     EG.to(dev)
     
     if args.use_ema:
+        print('Use EMA')
         EG_ema.copy_to()
 
     if not os.path.exists(args.path_output):
