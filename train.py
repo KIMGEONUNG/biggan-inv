@@ -26,14 +26,16 @@ from utils.common_utils import (extract_sample, lab_fusion,set_seed,
 from utils.logger import (make_log_scalar, make_log_img, 
                           make_log_ckpt, load_for_retrain,
                           load_for_retrain_EMA)
+from utils.data import ColorEnhance
 import utils
+
 from torch_ema import ExponentialMovingAverage
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='baseline_1000')
-    parser.add_argument('--detail', default='ema')
+    parser.add_argument('--task_name', default='color_enhance')
+    parser.add_argument('--detail', default='add color enhancement 1.5')
 
     # Mode
     parser.add_argument('--norm_type', default='adabatch', 
@@ -54,7 +56,7 @@ def parse_args():
     parser.add_argument('--path_imgnet_val', default='./imgnet/val')
 
     parser.add_argument('--index_target', type=int, nargs='+', 
-            default=list(range(1000)))
+            default=list(range(100)))
     parser.add_argument('--num_worker', default=8)
     parser.add_argument('--iter_sample', default=3)
 
@@ -105,6 +107,7 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--size_batch', default=60)
     parser.add_argument('--port', type=str, default='12355')
+    parser.add_argument('--no_augment', action='store_true')
 
     # GPU
     parser.add_argument('--multi_gpu', default=True)
@@ -204,6 +207,8 @@ def train(dev, world_size, config, args,
             sampler=sampler, pin_memory=True,
             num_workers=args.num_worker, drop_last=True)
 
+    color_enhance = ColorEnhance()
+
     # AMP
     scaler = GradScaler()
 
@@ -226,10 +231,14 @@ def train(dev, world_size, config, args,
                 fake = EG(x_gray, c, z)
 
             # DISCRIMINATOR 
+            x_real = x
+            if not args.no_augment:
+                x_real =  color_enhance(x)
+
             optimizer_d.zero_grad()
             cal_loss_d = lambda: loss_fn_d(D=D,
                                            c=c,
-                                           real=x,
+                                           real=x_real,
                                            fake=fake.detach())
             with autocast():
                 loss_d = cal_loss_d()

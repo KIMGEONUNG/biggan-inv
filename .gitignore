@@ -20,3 +20,4 @@ ckpts/
 *.pickle
 out_*
 results*
+rs*
