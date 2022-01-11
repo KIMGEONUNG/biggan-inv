@@ -107,12 +107,8 @@ def main(args):
                             # transforms.CenterCrop(size_target),
                             transforms.Grayscale()]))
 
-    EG = Colorizer(config, 
-                   args.path_ckpt_g,
-                   args_loaded.norm_type,
-                   id_mid_layer=args_loaded.num_layer,
-                   activation=args_loaded.activation, 
-                   use_attention=args_loaded.use_attention)
+    EG = Colorizer(config, args.path_ckpt_g, args_loaded.norm_type,
+            id_mid_layer=args.num_layer)
     EG.load_state_dict(torch.load(path_eg, map_location='cpu'), strict=True)
     EG_ema = ExponentialMovingAverage(EG.parameters(), decay=0.99)
     EG_ema.load_state_dict(torch.load(path_eg_ema, map_location='cpu'))
