@@ -34,8 +34,8 @@ from torch_ema import ExponentialMovingAverage
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--task_name', default='color_enhance')
-    parser.add_argument('--detail', default='add color enhancement 1.5')
+    parser.add_argument('--task_name', default='unknown')
+    parser.add_argument('--detail', default='unknown')
 
     # Mode
     parser.add_argument('--norm_type', default='adabatch', 
@@ -56,7 +56,7 @@ def parse_args():
     parser.add_argument('--path_imgnet_val', default='./imgnet/val')
 
     parser.add_argument('--index_target', type=int, nargs='+', 
-            default=list(range(100)))
+            default=list(range(1000)))
     parser.add_argument('--num_worker', default=8)
     parser.add_argument('--iter_sample', default=3)
 
@@ -107,7 +107,7 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--size_batch', default=60)
     parser.add_argument('--port', type=str, default='12355')
-    parser.add_argument('--no_augment', action='store_true')
+    parser.add_argument('--use_enhance', action='store_true')
     parser.add_argument('--coef_enhance', type=float, default=1.5)
     parser.add_argument('--use_attention', action='store_true')
 
@@ -235,7 +235,7 @@ def train(dev, world_size, config, args,
 
             # DISCRIMINATOR 
             x_real = x
-            if not args.no_augment:
+            if args.use_enhance:
                 x_real =  color_enhance(x)
 
             optimizer_d.zero_grad()
