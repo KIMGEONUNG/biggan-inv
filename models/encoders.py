@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import functools
+import layers
 from torch.nn import init
 
 
@@ -165,14 +166,27 @@ class EncoderF_Res(nn.Module):
                  ch_unit=96,
                  norm='batch',
                  activation='relu',
-                 init='ortho'):
+                 init='ortho',
+                 use_att=False):
         super().__init__()
 
         self.init = init
+        self.use_att = use_att
 
         kwargs = {}
         if activation == 'lrelu':
             kwargs['l_slope'] = 0.2
+
+        if use_att:
+            print('Adding attention layer in E at resolution %d' % (64))
+            conv4att = functools.partial(
+                layers.SNConv2d,
+                kernel_size=3,
+                padding=1,
+                num_svs=1,
+                num_itrs=1,
+                eps=1e-06)
+            self.att = layers.Attention(384, conv4att)
 
         # output is 96 x 256 x 256
         self.res1 = ResConvBlock(ch_in, ch_unit * 1,
@@ -218,6 +232,8 @@ class EncoderF_Res(nn.Module):
         x = self.res1(x, c)
         x = self.res2(x, c)
         x = self.res3(x, c)
+        if self.use_att:
+            x = self.att(x)
         x = self.res4(x, c)
         x = self.res5(x, c)
         return x
@@ -248,7 +264,11 @@ class EncoderF_Res(nn.Module):
 # index 6: ([batch, 96, 256, 256])
 # result: ([batch, 3 256, 256])
 if __name__ == '__main__':
-    model = EncoderF_Res()
+    model = EncoderF_Res(use_att=True)
+    model.float()
+    y = model(torch.randn(4,1,256,256))
+    print(y.shape)
+    exit()
     def count_parameters(model):
         return sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(count_parameters(model))
