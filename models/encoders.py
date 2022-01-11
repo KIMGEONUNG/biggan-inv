@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import functools
-import layers
+from .layers import SNConv2d, Attention
 from torch.nn import init
 
 
@@ -180,13 +180,13 @@ class EncoderF_Res(nn.Module):
         if use_att:
             print('Adding attention layer in E at resolution %d' % (64))
             conv4att = functools.partial(
-                layers.SNConv2d,
+                SNConv2d,
                 kernel_size=3,
                 padding=1,
                 num_svs=1,
                 num_itrs=1,
                 eps=1e-06)
-            self.att = layers.Attention(384, conv4att)
+            self.att = Attention(384, conv4att)
 
         # output is 96 x 256 x 256
         self.res1 = ResConvBlock(ch_in, ch_unit * 1,
