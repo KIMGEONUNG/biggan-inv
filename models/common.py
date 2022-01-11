@@ -57,14 +57,17 @@ class Colorizer(nn.Module):
                  activation='relu',
                  id_mid_layer=2, 
                  fix_g=False,
-                 init_e=None):
+                 init_e=None,
+                 use_attention=False):
         super().__init__()
 
         self.id_mid_layer = id_mid_layer  
+        self.use_attention = use_attention
 
         self.E = EncoderF_Res(norm=norm_type,
                               activation=activation,
-                              init=init_e)
+                              init=init_e,
+                              use_att=use_attention)
 
         self.G = Generator(**config)
         self.G.load_state_dict(torch.load(path_ckpt_g, map_location='cpu'),

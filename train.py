@@ -145,7 +145,8 @@ def train(dev, world_size, config, args,
                    id_mid_layer=args.num_layer, 
                    activation=args.activation, 
                    fix_g=(not args.finetune_g),
-                   init_e=args.weight_init)
+                   init_e=args.weight_init,
+                   use_attention=args.use_attention)
     EG.train()
     D = models.Discriminator(**config)
     D.train()
