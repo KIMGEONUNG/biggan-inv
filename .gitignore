@@ -21,3 +21,6 @@ ckpts/
 out_*
 results*
 rs*
+doit.sh
+./resource/grays/
+exprs

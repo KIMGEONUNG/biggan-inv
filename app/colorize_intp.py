@@ -1,4 +1,7 @@
+import sys
 import os
+sys.path.append(os.path.abspath(os.curdir))
+from PIL import Image
 from os.path import join, exists
 from skimage.color import rgb2lab, lab2rgb
 import numpy as np
@@ -29,34 +32,23 @@ def parse():
     parser.add_argument('--path_config', default='./pretrained/config.pickle')
     parser.add_argument('--path_ckpt_g', default='./pretrained/G_ema_256.pth')
     parser.add_argument('--path_ckpt', default='./ckpts/baseline_1000')
-    parser.add_argument('--path_output', default='./results')
-    parser.add_argument('--path_imgnet_train', default='./imgnet/train')
-    parser.add_argument('--path_imgnet_val', default='./imgnet/val')
+    parser.add_argument('--path_output', default='./results_exp')
+    parser.add_argument('--path_input', default='./grays')
     parser.add_argument('--use_ema', action='store_true')
 
     parser.add_argument('--num_layer', default=2)
     parser.add_argument('--norm_type', default='instance', 
             choices=['instance', 'batch', 'layer'])
+    parser.add_argument('--postfix', default='')
 
     # Dataset
-    parser.add_argument('--iter_sample', default=4)
     parser.add_argument('--dim_z', type=int, default=119)
 
     # User Input 
-    parser.add_argument('--index_target',
-            type=int, nargs='+', default=list(range(1000)))
-    parser.add_argument('--color_jitter', type=int, default=1)
-    parser.add_argument('--z_sample_scheme', type=str, 
-            default='sample', choices=['sample', 'zero', 'one'])
-    parser.add_argument('--colorization_target', default='valid',
-            choices=['valid', 'train']
-            )
-
-    parser.add_argument('--raw_save', action='store_true')
-    parser.add_argument('--view_gt', default=True)
-    parser.add_argument('--view_gray', default=True)
-    parser.add_argument('--view_rgb', default=False)
-    parser.add_argument('--view_lab', default=True)
+    parser.add_argument('--use_rgb', action='store_true')
+    parser.add_argument('--max_img', type=int, default=100)
+    parser.add_argument('--classes', type=int, nargs=2,
+            default=[11, 14])
 
     parser.add_argument('--device', default='cuda:0')
 
@@ -81,7 +73,9 @@ def main(args):
     if args.seed >= 0:
         set_seed(args.seed)
 
+    print('Target checkpoint is %s' % args.path_ckpt)
     print('Target Epoch is %03d' % args.epoch)
+    print('Target class is %04d and %04d' % (args.classes[0], args.classes[1]))
 
     path_eg = join(args.path_ckpt, 'EG_%03d.ckpt' % args.epoch)
     path_eg_ema = join(args.path_ckpt, 'EG_EMA_%03d.ckpt' % args.epoch)
@@ -98,14 +92,15 @@ def main(args):
     with open(path_args, 'rb') as f:
         args_loaded = pickle.load(f)
 
+
     dev = args.device
 
-    grays = ImageFolder(args.path_imgnet_val,
-                        transform=transforms.Compose([
-                            transforms.ToTensor(),
-                            # transforms.Resize(size_target),
-                            # transforms.CenterCrop(size_target),
-                            transforms.Grayscale()]))
+    prep=transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Grayscale()])
+    grays = [join(args.path_input, p) for p in os.listdir(args.path_input)]
+    grays = [Image.open(g) for g in grays]
+    grays = [prep(g) for g in grays]
 
     EG = Colorizer(config, args.path_ckpt_g, args_loaded.norm_type,
             id_mid_layer=args.num_layer)
@@ -124,28 +119,44 @@ def main(args):
     if not os.path.exists(args.path_output):
         os.mkdir(args.path_output)
 
-    for i, (x, c) in enumerate(tqdm(grays)):
+    for i, x, in enumerate(tqdm(grays)):
         size = x.shape[1:]
 
-        c = torch.LongTensor([c])
-        x = x.unsqueeze(0)
-        x, c = x.to(dev), c.to(dev)
-        z = torch.zeros((1, args.dim_z)).to(dev)
-        z.normal_(mean=0, std=0.8)
 
-        x_resize = transforms.Resize((size_target))(x)
         with torch.no_grad():
-            output = EG(x_resize, c, z)
-            output = output.add(1).div(2)
+            c_embd_1 = EG.G.shared(torch.LongTensor([args.classes[0]]).to(dev))
+            c_embd_2 = EG.G.shared(torch.LongTensor([args.classes[1]]).to(dev))
 
-        x = x.squeeze(0).cpu()
-        output = output.squeeze(0)
-        output = output.detach().cpu()
-        output = transforms.Resize(size)(output)
+        for j, coef in enumerate(torch.linspace(1, 0, 10)):
+            c_embd = coef * c_embd_1 + (1 - coef) * c_embd_2
+            x = x.to(dev)
+            x = x.unsqueeze(0)
+            z = torch.zeros((1, args.dim_z)).to(dev)
+            z.normal_(mean=0, std=0.8)
+            x_resize = transforms.Resize((size_target))(x)
 
-        lab = fusion(x, output)
-        im = ToPILImage()(lab)
-        im.save('./%s/%05d.jpg' % (args.path_output, i))
+            with torch.no_grad():
+                output = EG.forward_with_class(x_resize, c_embd, z)
+                output = output.add(1).div(2)
+
+            x = x.squeeze(0).cpu()
+            output = output.squeeze(0)
+            output = output.detach().cpu()
+            output = transforms.Resize(size)(output)
+
+            if args.use_rgb:
+                pass
+            else:
+                output = fusion(x, output)
+            im = ToPILImage()(output)
+            im.save('./%s/c%04d_c%04d_%03d_n%02d%s.jpg' %
+                    (args.path_output,
+                        args.classes[0], args.classes[1],
+                        i, j, 
+                        args.postfix))
+            
+        if i  >= args.max_img - 1:
+            break;
 
 
 def fusion(gray, color):
