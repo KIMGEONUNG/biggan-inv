@@ -32,6 +32,7 @@ def parse():
     parser.add_argument('--epoch', type=int, default=12)
 
     # I/O
+    parser.add_argument('--path_vgg', default='./pretrained/vgg16.pickle')
     parser.add_argument('--path_config', default='./pretrained/config.pickle')
     parser.add_argument('--path_ckpt_g', default='./pretrained/G_ema_256.pth')
     parser.add_argument('--path_ckpt', default='./ckpts/baseline_1000')
@@ -56,7 +57,7 @@ def parse():
     parser.add_argument('--lpips_net', type=str, default='alex',
                                     choices=['vgg', 'alex'])
     parser.add_argument('--loss', type=str, default='lpips',
-                                    choices=['mse', 'lpips'])
+                                    choices=['mse', 'lpips', 'feat_vgg'])
 
     parser.add_argument('--device', default='cuda:0')
 
@@ -89,6 +90,54 @@ class lpips_loss(object):
         return self.model(x1, x2)
 
 
+class VGGFeatLoss(nn.Module):
+
+    def __init__(self, 
+                 path_vgg: str, 
+                 resize=True, 
+                 normalized_input=True):
+        super().__init__()
+
+        import pickle 
+        with open(path_vgg, 'rb') as f:
+            self.model = pickle.load(f).eval()
+
+        self.normalized_intput = normalized_input
+        # self.idx_targets = [1, 2, 13, 20]
+        self.idx_targets = [4, 5, 6, 7]
+
+        preprocess = []
+        if resize:
+            preprocess.append(transforms.Resize((224, 224)))
+        if normalized_input:
+            preprocess.append(transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225]))
+
+        self.preprocess = transforms.Compose(preprocess)
+
+    def get_mid_feats(self, x):
+        x = self.preprocess(x)
+        feats = []
+        for i, layer in enumerate(self.model.features[:max(self.idx_targets) + 1]):
+            x = layer(x)
+            if i in self.idx_targets:
+                feats.append(x)
+
+        return feats
+
+
+    def forward(self, x1, x2):
+        size_batch = x1.shape[0]
+        x1_feats = self.get_mid_feats(x1)
+        x2_feats = self.get_mid_feats(x2)
+
+        loss = 0
+        for feat1, feat2 in zip(x1_feats, x2_feats):
+            loss += feat1.sub(feat2).pow(2).mean()
+
+        return loss / size_batch
+
+
 def main(args):
     size_target = 256
 
@@ -98,6 +147,7 @@ def main(args):
     print('Target checkpoint is %s' % args.path_ckpt)
     print('Target Epoch is %03d' % args.epoch)
     print('Target classes is', args.class_id)
+    print('Target loss is', args.loss)
 
     path_eg = join(args.path_ckpt, 'EG_%03d.ckpt' % args.epoch)
     path_eg_ema = join(args.path_ckpt, 'EG_EMA_%03d.ckpt' % args.epoch)
@@ -143,6 +193,8 @@ def main(args):
         loss_fn = lpips_loss(args.lpips_net, dev, True)
     elif args.loss == 'mse':
         loss_fn = nn.MSELoss()
+    elif args.loss == 'feat_vgg':
+        loss_fn = VGGFeatLoss(args.path_vgg).to(dev)
     else:
         raise Exception()
     
