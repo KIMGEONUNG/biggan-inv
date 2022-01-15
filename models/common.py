@@ -39,14 +39,14 @@ class VGG16Perceptual(nn.Module):
 
     def forward(self, x1, x2):
         size_batch = x1.shape[0]
-        x1_feats = self.preprocess(x1)
-        x2_feats = self.preprocess(x2)
+        x1_feats = self.get_mid_feats(x1)
+        x2_feats = self.get_mid_feats(x2)
 
         loss = 0
         for feat1, feat2 in zip(x1_feats, x2_feats):
             loss += feat1.sub(feat2).pow(2).mean()
 
-        return loss / size_batch
+        return loss / size_batch / len(self.idx_targets)
 
 
 class Colorizer(nn.Module):
