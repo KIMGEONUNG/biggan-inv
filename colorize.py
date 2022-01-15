@@ -103,8 +103,6 @@ def main(args):
     grays = ImageFolder(args.path_imgnet_val,
                         transform=transforms.Compose([
                             transforms.ToTensor(),
-                            # transforms.Resize(size_target),
-                            # transforms.CenterCrop(size_target),
                             transforms.Grayscale()]))
 
     EG = Colorizer(config, 
