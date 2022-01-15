@@ -201,7 +201,7 @@ def train(dev, world_size, config, args,
     D = DDP(D, device_ids=[dev], 
             find_unused_parameters=False)
     vgg_per = DDP(vgg_per, device_ids=[dev], 
-                  find_unused_parameters=False)
+                  find_unused_parameters=True)
      
     # Datasets
     sampler = DistributedSampler(dataset)
