@@ -5,6 +5,39 @@ from .encoders import EncoderF_Res
 from .biggan import Generator
 
 class VGG16Perceptual(nn.Module):
+    '''
+    layer 00 [64 , 224, 224]
+    layer 01 [64 , 224, 224]
+    layer 02 [64 , 224, 224]
+    layer 03 [64 , 224, 224]
+    layer 04 [64 , 112, 112]
+    layer 05 [128, 112, 112]
+    layer 06 [128, 112, 112]
+    layer 07 [128, 112, 112]
+    layer 08 [128, 112, 112]
+    layer 09 [128, 56 , 56 ]
+    layer 10 [256, 56 , 56 ]
+    layer 11 [256, 56 , 56 ]
+    layer 12 [256, 56 , 56 ]
+    layer 13 [256, 56 , 56 ]
+    layer 14 [256, 56 , 56 ]
+    layer 15 [256, 56 , 56 ]
+    layer 16 [256, 28 , 28 ]
+    layer 17 [512, 28 , 28 ]
+    layer 18 [512, 28 , 28 ]
+    layer 19 [512, 28 , 28 ]
+    layer 20 [512, 28 , 28 ]
+    layer 21 [512, 28 , 28 ]
+    layer 22 [512, 28 , 28 ]
+    layer 23 [512, 14 , 14 ]
+    layer 24 [512, 14 , 14 ]
+    layer 25 [512, 14 , 14 ]
+    layer 26 [512, 14 , 14 ]
+    layer 27 [512, 14 , 14 ]
+    layer 28 [512, 14 , 14 ]
+    layer 29 [512, 14 , 14 ]
+    layer 30 [512, 7  , 7  ]
+    '''
 
     def __init__(self, path_vgg: str, resize=True, normalized_input=True):
         super().__init__()
