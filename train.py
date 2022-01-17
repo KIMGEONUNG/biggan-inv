@@ -46,7 +46,7 @@ def parse_args():
             choices=['xavier', 'N02', 'ortho', ''])
 
     # IO
-    parser.add_argument('--path_log', default='runs_refact')
+    parser.add_argument('--path_log', default='runs')
     parser.add_argument('--path_ckpts', default='ckpts')
     parser.add_argument('--path_config', default='./pretrained/config.pickle')
     parser.add_argument('--path_vgg', default='./pretrained/vgg16.pickle')
