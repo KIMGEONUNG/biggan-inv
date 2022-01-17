@@ -107,7 +107,7 @@ def parse_args():
     # Others
     parser.add_argument('--dim_z', type=int, default=119)
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--size_batch', default=60)
+    parser.add_argument('--size_batch', type=int, default=60)
     parser.add_argument('--port', type=str, default='12355')
     parser.add_argument('--use_enhance', action='store_true')
     parser.add_argument('--coef_enhance', type=float, default=1.5)
