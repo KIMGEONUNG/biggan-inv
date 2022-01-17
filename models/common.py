@@ -6,6 +6,7 @@ from .biggan import Generator
 
 class VGG16Perceptual(nn.Module):
     '''
+    Dimension for each layers
     layer 00 [64 , 224, 224]
     layer 01 [64 , 224, 224]
     layer 02 [64 , 224, 224]
@@ -39,7 +40,10 @@ class VGG16Perceptual(nn.Module):
     layer 30 [512, 7  , 7  ]
     '''
 
-    def __init__(self, path_vgg: str, resize=True, normalized_input=True):
+    def __init__(self, path_vgg: str,
+            id_targets = [1, 2, 13, 20],
+            resize=True,
+            normalized_input=True):
         super().__init__()
 
         import pickle 
@@ -47,7 +51,7 @@ class VGG16Perceptual(nn.Module):
             self.model = pickle.load(f).eval()
 
         self.normalized_intput = normalized_input
-        self.idx_targets = [1, 2, 13, 20]
+        self.idx_targets = id_targets
 
         preprocess = []
         if resize:

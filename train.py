@@ -97,6 +97,8 @@ def parse_args():
     parser.add_argument('--coef_mse', type=float, default=1.0)
     parser.add_argument('--coef_lpips', type=float, default=0.2)
     parser.add_argument('--coef_adv', type=float, default=0.03)
+    parser.add_argument('--vgg_target_layers', type=int, nargs='+',
+                            default=[1, 2, 13, 20])
 
     # EMA
     parser.add_argument('--decay_ema_g', type=float, default=0.999)
@@ -184,7 +186,7 @@ def train(dev, world_size, config, args,
     # Set Device 
     EG = EG.to(dev)
     D = D.to(dev)
-    vgg_per = VGG16Perceptual(args.path_vgg).to(dev)
+    vgg_per = VGG16Perceptual(args.path_vgg, args.vgg_target_layers).to(dev)
     utils.optimizer_to(optimizer_g, 'cuda:%d' % dev)
     utils.optimizer_to(optimizer_d, 'cuda:%d' % dev)
 
