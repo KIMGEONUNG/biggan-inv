@@ -11,68 +11,26 @@ import torchvision.transforms as transforms
 from torchvision.transforms import ToPILImage
 from tqdm import tqdm
 from torch_ema import ExponentialMovingAverage
+from utils.common_utils import set_seed
 
 
 def parse():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--seed', type=int, default=2)
-    # 5 --> 32, 4 --> 16, ...
-    parser.add_argument('--max_iter', default=1000)
-    parser.add_argument('--num_row', type=int, default=8)
-    parser.add_argument('--class_index', type=int, default=15)
-    parser.add_argument('--size_batch', type=int, default=8)
-    parser.add_argument('--num_worker', default=8)
-    parser.add_argument('--epoch', type=int, default=0)
 
     # I/O
     parser.add_argument('--path_config', default='./pretrained/config.pickle')
     parser.add_argument('--path_ckpt_g', default='./pretrained/G_ema_256.pth')
     parser.add_argument('--path_ckpt', default='./ckpts/baseline_1000')
     parser.add_argument('--path_output', default='./results')
-    parser.add_argument('--path_imgnet_train', default='./imgnet/train')
     parser.add_argument('--path_imgnet_val', default='./imgnet/val')
+
     parser.add_argument('--use_ema', action='store_true')
-
-    parser.add_argument('--num_layer', default=2)
-    parser.add_argument('--norm_type', default='instance', 
-            choices=['instance', 'batch', 'layer'])
-
-    # Dataset
-    parser.add_argument('--iter_sample', default=4)
-    parser.add_argument('--dim_z', type=int, default=119)
-
-    # User Input 
-    parser.add_argument('--index_target',
-            type=int, nargs='+', default=list(range(1000)))
-    parser.add_argument('--color_jitter', type=int, default=1)
-    parser.add_argument('--z_sample_scheme', type=str, 
-            default='sample', choices=['sample', 'zero', 'one'])
-    parser.add_argument('--colorization_target', default='valid',
-            choices=['valid', 'train']
-            )
-
-    parser.add_argument('--raw_save', action='store_true')
-    parser.add_argument('--view_gt', default=True)
-    parser.add_argument('--view_gray', default=True)
-    parser.add_argument('--view_rgb', default=False)
-    parser.add_argument('--view_lab', default=True)
-
     parser.add_argument('--device', default='cuda:0')
+    parser.add_argument('--epoch', type=int, default=0)
 
     return parser.parse_args()
-
-
-def set_seed(seed):
-    import random
-    import numpy as np
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    np.random.seed(seed)
-    random.seed(seed)
 
 
 def main(args):
@@ -132,7 +90,7 @@ def main(args):
         c = torch.LongTensor([c])
         x = x.unsqueeze(0)
         x, c = x.to(dev), c.to(dev)
-        z = torch.zeros((1, args.dim_z)).to(dev)
+        z = torch.zeros((1, args_loaded.dim_z)).to(dev)
         z.normal_(mean=0, std=0.8)
 
         x_resize = transforms.Resize((size_target))(x)

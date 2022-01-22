@@ -2,12 +2,13 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Subset 
 import torchvision.transforms as transforms
-from torchvision.transforms import ToTensor
+from torchvision.transforms import ToTensor, Grayscale
 from torchvision.datasets import ImageFolder
 from torchvision.utils import make_grid
 from torch.utils.data import DataLoader
 import numpy as np
 from skimage import color
+from .color_models import rgb2lab, lab2rgb
 
 
 LAYER_DIM = {
@@ -125,6 +126,30 @@ def lab_fusion(x_l, x_ab):
     labs = torch.stack(labs)
      
     return labs
+
+
+def color_enhacne_blend(x, factor):
+    x_g = Grayscale(3)(x)
+    out = x_g * (1.0 - factor) + x * factor
+    out[out < 0] = 0
+    out[out > 1] = 1
+    return out
+
+
+def color_enhacne_abgc(x, factor):
+    lab = rgb2lab(x)
+
+    ab = lab[..., 1:3, :, :]
+    ab /= 110
+
+    ab[ab > 0] = torch.pow(factor, 1 / ab[ab > 0])
+    ab[ab < 0] = -torch.pow(factor, 1 / ab[ab < 0].abs())
+
+    ab *= 110
+    lab[..., 1:3, :, :] = ab
+    rgb = lab2rgb(lab)
+
+    return rgb
 
 
 def make_grid_multi(xs, nrow=4):

@@ -21,7 +21,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from utils.losses import loss_fn_d, loss_fn_g
-from utils.common_utils import (extract_sample, lab_fusion,set_seed,
+from utils.common_utils import (extract_sample, set_seed,
         make_grid_multi, prepare_dataset)
 from utils.logger import (make_log_scalar, make_log_img, 
                           make_log_ckpt, load_for_retrain,
