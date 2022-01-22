@@ -58,7 +58,8 @@ def parse():
                                     choices=['vgg', 'alex'])
     parser.add_argument('--loss', type=str, default='lpips',
                                     choices=['mse', 'lpips', 'feat_vgg'])
-
+    parser.add_argument('--optimizer', type=str, default='adam',
+                                    choices=['adam', 'sgd'])
     parser.add_argument('--device', default='cuda:0')
 
     return parser.parse_args()
@@ -221,17 +222,28 @@ def main(args):
 
         c = torch.LongTensor([args.class_id]).to(dev)
         c_embd = EG.G.shared(c).clone().detach()
-        c_embd = Variable(c_embd, requires_grad=True)
-        optimizer = optim.Adam([c_embd], lr=args.lr)
+        c_embds = [Variable(c_embd.clone(), requires_grad=True) 
+                   for _ in range(11)]
+        
+
+        if args.optimizer == 'adam':
+            optimizer = optim.Adam
+        elif args.optimizer == 'sgd':
+            optimizer = optim.SGD
+        else:
+            raise Exception("Invalid optimizer")
+
+
+        optimizer = optimizer(params=c_embds, lr=args.lr)
 
         with torch.no_grad():
-            output = EG.forward_with_c(x_resize, c_embd, z)
+            output = EG.forward_with_cp(x_resize, c_embds, z)
             output_init = output.add(1).div(2).detach()
 
         tbar = tqdm(range(args.num_iter))
         for j in tbar:
 
-            output = EG.forward_with_c(x_resize, c_embd, z)
+            output = EG.forward_with_cp(x_resize, c_embds, z)
             output = output.add(1).div(2)
 
             output_fore = output.clone()

@@ -18,6 +18,7 @@ import torch.optim as optim
 from torch.autograd import Variable
 import torch.nn as nn
 import lpips
+from kornia.color.lab import rgb_to_lab
 
 
 def parse():
@@ -36,9 +37,9 @@ def parse():
     parser.add_argument('--path_config', default='./pretrained/config.pickle')
     parser.add_argument('--path_ckpt_g', default='./pretrained/G_ema_256.pth')
     parser.add_argument('--path_ckpt', default='./ckpts/baseline_1000')
-    parser.add_argument('--path_output', default='./results_opt_c')
-    parser.add_argument('--path_input', default='./grays_opt/ILSVRC2012_val_00044540.JPEG')
-    parser.add_argument('--path_input_mask', default='./masks')
+    parser.add_argument('--path_output', default='./exprs/global')
+    parser.add_argument('--path_input', default='./resource/grays_nature/48794_970.jpg')
+    parser.add_argument('--path_input_refer', default='./resource/refers/sunset.jpg')
     parser.add_argument('--use_ema', action='store_true')
 
     parser.add_argument('--num_layer', default=2)
@@ -58,7 +59,8 @@ def parse():
                                     choices=['vgg', 'alex'])
     parser.add_argument('--loss', type=str, default='lpips',
                                     choices=['mse', 'lpips', 'feat_vgg'])
-
+    parser.add_argument('--optimizer', type=str, default='adam',
+                                    choices=['adam', 'sgd'])
     parser.add_argument('--device', default='cuda:0')
 
     return parser.parse_args()
@@ -125,7 +127,6 @@ class VGGFeatLoss(nn.Module):
 
         return feats
 
-
     def forward(self, x1, x2):
         size_batch = x1.shape[0]
         x1_feats = self.get_mid_feats(x1)
@@ -136,6 +137,21 @@ class VGGFeatLoss(nn.Module):
             loss += feat1.sub(feat2).pow(2).mean()
 
         return loss / size_batch
+
+
+def get_ab_dist(x_rgb):
+
+    x_lab = rgb_to_lab(x_rgb)
+
+    L, a, b = torch.split(x_lab, 1)
+    a, b = a.reshape(-1), b.reshape(-1)
+
+    a_dist = torch.histogram(a, bins=22, range=(-110, 110)) 
+    a_dist /= len(a)
+    b_dist = torch.histogram(b, bins=22, range=(-110, 110)) 
+    b_dist /= len(b)
+
+    return a_dist, b_dist
 
 
 def main(args):
@@ -170,14 +186,14 @@ def main(args):
                 transforms.ToTensor(),
                 transforms.Grayscale()])
 
+
     gray = Image.open(args.path_input) 
     gray = prep(gray)
 
-
-    name = args.path_input.split('/')[-1].split('.')[0]
-    masks = [join(args.path_input_mask, p) for p in os.listdir(args.path_input_mask) if name in p]
-    masks = [Image.open(mask) for mask in masks]
-    masks = [transforms.ToTensor()(mask) for mask in masks]
+    refer = Image.open(args.path_input_refer)
+    refer = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Resize((250, 250))])(refer)
 
     EG = Colorizer(config, args.path_ckpt_g, args_loaded.norm_type,
             id_mid_layer=args.num_layer)
@@ -205,67 +221,80 @@ def main(args):
     if not os.path.exists(args.path_output):
         os.mkdir(args.path_output)
 
-    for i, mask in enumerate(masks):
-        x, m = gray.clone(), mask
-        size = x.shape[1:]
+    x = gray.clone()
+    size = x.shape[1:]
 
-        x = x.to(dev)
-        x = x.unsqueeze(0)
-        x_resize = transforms.Resize((size_target))(x)
+    x = x.to(dev)
+    x = x.unsqueeze(0)
+    x_resize = transforms.Resize((size_target))(x)
 
-        m = m.to(dev)
-        m = m.unsqueeze(0)
+    z = torch.zeros((1, args.dim_z)).to(dev)
+    z.normal_(mean=0, std=0.8)
 
-        z = torch.zeros((1, args.dim_z)).to(dev)
-        z.normal_(mean=0, std=0.8)
+    refer = refer.to(dev)
+    refer_dist = get_ab_dist(refer)
+    print(refer_dist)
+    exit()
 
-        c = torch.LongTensor([args.class_id]).to(dev)
-        c_embd = EG.G.shared(c).clone().detach()
-        c_embd = Variable(c_embd, requires_grad=True)
-        optimizer = optim.Adam([c_embd], lr=args.lr)
 
-        with torch.no_grad():
-            output = EG.forward_with_c(x_resize, c_embd, z)
-            output_init = output.add(1).div(2).detach()
+    c = torch.LongTensor([args.class_id]).to(dev)
+    c_embd = EG.G.shared(c).clone().detach()
+    c_embds = [Variable(c_embd.clone(), requires_grad=True) 
+               for _ in range(2)]
+    
 
-        tbar = tqdm(range(args.num_iter))
-        for j in tbar:
+    if args.optimizer == 'adam':
+        optimizer = optim.Adam
+    elif args.optimizer == 'sgd':
+        optimizer = optim.SGD
+    else:
+        raise Exception("Invalid optimizer")
 
-            output = EG.forward_with_c(x_resize, c_embd, z)
-            output = output.add(1).div(2)
 
-            output_fore = output.clone()
-            output_back = output.clone()
-            m_resize = transforms.Resize(output.shape[-2:])(m)
-            x_resize_gt = transforms.Resize(output.shape[-2:])(x)
+    optimizer = optimizer(params=c_embds, lr=args.lr)
 
-            output_fore[m_resize == 0] = 0
+    with torch.no_grad():
+        output = EG.forward_with_c2(x_resize, c_embds, z)
+        output_init = output.add(1).div(2).detach()
 
-            output_back[m_resize != 0] = 0
-            output_init[m_resize != 0] = 0
+    tbar = tqdm(range(args.num_iter))
+    for j in tbar:
 
-            loss = loss_fn(output_fore, m_resize) +\
-                    loss_fn(output_back, output_init)
+        output = EG.forward_with_c2(x_resize, c_embds, z)
+        output = output.add(1).div(2)
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+        output_fore = output.clone()
+        output_back = output.clone()
+        m_resize = transforms.Resize(output.shape[-2:])(m)
+        x_resize_gt = transforms.Resize(output.shape[-2:])(x)
 
-            tbar.set_postfix(loss=loss.item())
+        output_fore[m_resize == 0] = 0
 
-            if j % args.interval == 0:
-                x_ = x.clone()
-                x_ = x_.squeeze(0).cpu()
-                output = output.squeeze(0)
-                output = output.detach().cpu()
-                output = transforms.Resize(size)(output)
+        output_back[m_resize != 0] = 0
+        output_init[m_resize != 0] = 0
 
-                if args.use_rgb:
-                    pass
-                else:
-                    output = fusion(x_, output)
-                im = ToPILImage()(output)
-                im.save('./%s/n%i_iter_%04d%s.jpg' % (args.path_output, i, j, args.postfix))
+        loss = loss_fn(output_fore, m_resize) +\
+                loss_fn(output_back, output_init)
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        tbar.set_postfix(loss=loss.item())
+
+        if j % args.interval == 0:
+            x_ = x.clone()
+            x_ = x_.squeeze(0).cpu()
+            output = output.squeeze(0)
+            output = output.detach().cpu()
+            output = transforms.Resize(size)(output)
+
+            if args.use_rgb:
+                pass
+            else:
+                output = fusion(x_, output)
+            im = ToPILImage()(output)
+            im.save('./%s/n%i_iter_%04d%s.jpg' % (args.path_output, i, j, args.postfix))
 
 
 def fusion(gray, color):

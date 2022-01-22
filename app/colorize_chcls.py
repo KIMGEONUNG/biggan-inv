@@ -136,7 +136,7 @@ def main(args):
             x_resize = transforms.Resize((size_target))(x)
             with torch.no_grad():
 
-                output = EG.forward_with_class(x_resize, c_embd, z)
+                output = EG.forward_with_c(x_resize, c_embd, z)
                 output = output.add(1).div(2)
 
             x = x.squeeze(0).cpu()

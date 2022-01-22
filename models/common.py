@@ -120,10 +120,24 @@ class Colorizer(nn.Module):
                 self.id_mid_layer, f)
         return output
 
-    def forward_with_class(self, x_gray, c_embd, z):
+    def forward_with_c(self, x_gray, c_embd, z):
         f = self.E(x_gray, c_embd) 
         output = self.G.forward_from(z, c_embd, 
                 self.id_mid_layer, f)
+        return output
+
+    def forward_with_c2(self, x_gray, c_embds, z):
+        f = self.E(x_gray, c_embds[0]) 
+        output = self.G.forward_from(z, c_embds[1], 
+                self.id_mid_layer, f)
+        return output
+
+    def forward_with_cp(self, x_gray, c_embds, z):
+        c_embds_E = c_embds[:5]
+        c_embds_G = c_embds[5:]
+        f = self.E.forward_with_cp(x_gray, c_embds_E) 
+        output = self.G.forward_from_with_cp(z, c_embds_G, 
+                                             self.id_mid_layer, f)
         return output
 
     def train(self, mode=True):

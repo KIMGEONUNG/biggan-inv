@@ -238,6 +238,18 @@ class EncoderF_Res(nn.Module):
         x = self.res5(x, c)
         return x
 
+
+    def forward_with_cp(self, x, cp):
+        x = self.res1(x, cp[0])
+        x = self.res2(x, cp[1])
+        x = self.res3(x, cp[2])
+        if self.use_att:
+            x = self.att(x)
+        x = self.res4(x, cp[3])
+        x = self.res5(x, cp[4])
+        return x
+
+
     def init_weights(self):
         for module in self.modules():
             if (isinstance(module, nn.Conv2d) or isinstance(module, nn.Linear)
