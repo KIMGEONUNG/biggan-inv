@@ -26,10 +26,11 @@ from utils.common_utils import (extract_sample, set_seed,
 from utils.logger import (make_log_scalar, make_log_img, 
                           make_log_ckpt, load_for_retrain,
                           load_for_retrain_EMA)
-from utils.data import ColorEnhance
+from utils.common_utils import color_enhacne_blend
 import utils
 
 from torch_ema import ExponentialMovingAverage
+from functools import partial
 
 
 def parse_args():
@@ -212,7 +213,7 @@ def train(dev, world_size, config, args,
             sampler=sampler, pin_memory=True,
             num_workers=args.num_worker, drop_last=True)
 
-    color_enhance = ColorEnhance(factor=args.coef_enhance)
+    color_enhance = partial(color_enhacne_blend, factor=args.coef_enhance)
 
     # AMP
     scaler = GradScaler()
