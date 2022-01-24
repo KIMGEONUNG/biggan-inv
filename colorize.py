@@ -27,6 +27,7 @@ def parse():
     parser.add_argument('--path_imgnet_val', default='./imgnet/val')
 
     parser.add_argument('--use_ema', action='store_true')
+    parser.add_argument('--no_resize', action='store_true')
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--epoch', type=int, default=0)
 
@@ -99,12 +100,18 @@ def main(args):
             output = output.add(1).div(2)
 
         x = x.squeeze(0).cpu()
+        x_resize = x_resize.squeeze(0).cpu()
         output = output.squeeze(0)
         output = output.detach().cpu()
-        output = transforms.Resize(size)(output)
 
-        lab = fusion(x, output)
-        im = ToPILImage()(lab)
+        if args.no_resize:
+            output = transforms.Resize(x_resize.shape[1:])(output)
+            lab_fusion = fusion(x_resize, output)
+        else:
+            output = transforms.Resize(size)(output)
+            lab_fusion = fusion(x, output)
+
+        im = ToPILImage()(lab_fusion)
         im.save('./%s/%05d.jpg' % (args.path_output, i))
 
 
