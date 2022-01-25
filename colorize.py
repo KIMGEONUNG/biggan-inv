@@ -112,7 +112,7 @@ def main(args):
             lab_fusion = fusion(x, output)
 
         im = ToPILImage()(lab_fusion)
-        im.save('./%s/%05d.jpg' % (args.path_output, i))
+        im.save('%s/%05d.jpg' % (args.path_output, i))
 
 
 def fusion(gray, color):
