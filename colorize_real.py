@@ -17,6 +17,9 @@ from PIL import Image
 import timm
 
 
+MODEL2SIZE = {'resnet50d': 224,
+              'tf_efficientnet_l2_ns_475': 475}
+
 def parse():
     parser = argparse.ArgumentParser()
 
@@ -36,13 +39,10 @@ def parse():
 
     # Setting
     parser.add_argument('--size_target', type=int, default=256)
+    parser.add_argument('--topk', type=int, default=5)
     parser.add_argument('--cls_model', type=str, default='tf_efficientnet_l2_ns_475')
-    # parser.add_argument('--cls_model', type=str, default='resnet50d')
 
     return parser.parse_args()
-
-MODEL2SIZE = {'resnet50d': 224,
-              'tf_efficientnet_l2_ns_475': 475}
 
 
 def main(args):
@@ -118,25 +118,30 @@ def main(args):
         x_cls = x.repeat(1,3,1,1)
         x_cls = Resize((size_cls,size_cls))(x_cls)
         c = classifier(x_cls)
-        c = torch.argmax(c, dim=-1)
+        cs = torch.topk(c, args.topk)[1].reshape(-1)
+        c = torch.LongTensor([cs[0]]).to(dev)
 
-        x_resize = transforms.Resize((args.size_target))(x)
-        with torch.no_grad():
-            output = EG(x_resize, c, z)
-            output = output.add(1).div(2)
+        for c in cs:
+            c = torch.LongTensor([c]).to(dev)
+            x_resize = transforms.Resize((args.size_target))(x)
+            with torch.no_grad():
+                output = EG(x_resize, c, z)
+                output = output.add(1).div(2)
 
-        x = x.squeeze(0).cpu()
-        x_resize = x_resize.squeeze(0).cpu()
-        output = output.squeeze(0)
-        output = output.detach().cpu()
+            x_rs = x.squeeze(0).cpu()
+            x_resize = x_resize.squeeze(0).cpu()
+            output = output.squeeze(0)
+            output = output.detach().cpu()
 
-        output = transforms.Resize(size)(output)
-        lab_fusion = fusion(x, output)
-        im = ToPILImage()(lab_fusion)
+            output = transforms.Resize(size)(output)
+            lab_fusion = fusion(x_rs, output)
+            im = ToPILImage()(lab_fusion)
 
-        name = path.split('/')[-1]
-        path_out = join(args.path_output, name)
-        im.save(path_out)
+            name = path.split('/')[-1].split('.')[0]
+            name = name + '_c%03d.jpg' % c.item()
+
+            path_out = join(args.path_output, name)
+            im.save(path_out)
 
 
 def fusion(gray, color):
