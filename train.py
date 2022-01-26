@@ -58,14 +58,14 @@ def parse_args():
 
     parser.add_argument('--index_target', type=int, nargs='+', 
             default=list(range(1000)))
-    parser.add_argument('--num_worker', default=8)
-    parser.add_argument('--iter_sample', default=3)
+    parser.add_argument('--num_worker', type=int, default=8)
+    parser.add_argument('--iter_sample', type=int, default=3)
 
     # Encoder Traning
     parser.add_argument('--retrain', action='store_true')
     parser.add_argument('--retrain_epoch', type=int)
-    parser.add_argument('--num_layer', default=2)
-    parser.add_argument('--num_epoch', default=20)
+    parser.add_argument('--num_layer', type=int, default=2)
+    parser.add_argument('--num_epoch', type=int, default=20)
     parser.add_argument('--interval_save_loss', default=20)
     parser.add_argument('--interval_save_train', default=150)
     parser.add_argument('--interval_save_test', default=2000)
@@ -83,6 +83,8 @@ def parse_args():
     parser.add_argument("--b2_d", type=float, default=0.999)
     parser.add_argument('--use_schedule', default=True)
     parser.add_argument('--schedule_decay', type=float, default=0.90)
+    parser.add_argument('--schedule_type', type=str, default='mult',
+            choices=['mult', 'linear'])
 
     # Verbose
     parser.add_argument('--print_config', default=False)
@@ -165,10 +167,16 @@ def train(dev, world_size, config, args,
 
     # Schedular
     if args.use_schedule:
+        if args.schedule_type == 'mult':
+            schedule = lambda epoch: args.schedule_decay ** epoch
+        elif args.schedule_type == 'linear':
+            schedule = lambda epoch: (args.num_epoch - epoch) / args.num_epoch
+        else:
+            raise Exception('Invalid shedule type')
         scheduler_g = optim.lr_scheduler.LambdaLR(optimizer=optimizer_g,
-                        lr_lambda=lambda epoch: args.schedule_decay ** epoch)
+                        lr_lambda=schedule)
         scheduler_d = optim.lr_scheduler.LambdaLR(optimizer=optimizer_d,
-                        lr_lambda=lambda epoch: args.schedule_decay ** epoch)
+                        lr_lambda=schedule)
 
     # Retrain(opt)
     num_iter = 0
