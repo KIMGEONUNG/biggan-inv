@@ -2,7 +2,7 @@
 
 set -e
 
-dir_target="$(pwd)/results/lpips_low_feat_e010"
+dir_target="$(pwd)/results/fix_lpips_e010"
 dir_gt='gt_valid'
 
 # INFERENCE
