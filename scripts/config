@@ -1,2 +1,5 @@
+#!/bin/bash
+
 EPOCH=11
-PATH_CKPT=ckpts/fix_lpips
+NAME_TASK=fix_lpips
+PATH_CKPT=ckpts/$NAME_TASK
