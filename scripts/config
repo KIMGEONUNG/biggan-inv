@@ -1,2 +1,2 @@
-EPOCH=12
-PATH_CKPT=ckpts/baseline_1000
+EPOCH=11
+PATH_CKPT=ckpts/fix_lpips

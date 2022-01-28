@@ -351,7 +351,7 @@ class Generator(nn.Module):
         print('result:', h.shape)
         # Apply batchnorm-relu-conv-tanh at output
         return torch.tanh(self.output_layer(h))
-    
+
     def forward_from(self, z, y, num_layer, h, use_in=False):
         # If hierarchical, concatenate zs and ys
         if self.hier:
@@ -366,6 +366,31 @@ class Generator(nn.Module):
             # Second inner loop in case block has multiple layers
             if index < num_layer:
                 continue
+
+            for block in blocklist:
+                h = block(h, ys[index], use_in)
+
+        # Apply batchnorm-relu-conv-tanh at output
+        return torch.tanh(self.output_layer(h))
+    
+    def forward_from_to(self, z, y, num_layer_from, num_layer_to,
+                        h, use_in=False):
+        # If hierarchical, concatenate zs and ys
+        if self.hier:
+            zs = torch.split(z, self.z_chunk_size, 1)
+            z = zs[0]
+            ys = [torch.cat([y, item], 1) for item in zs[1:]]
+        else:
+            ys = [y] * len(self.blocks)
+
+        # Loop over blocks
+        for index, blocklist in enumerate(self.blocks):
+            # Second inner loop in case block has multiple layers
+            if index < num_layer_from:
+                continue
+
+            if index == num_layer_to:
+                return h
 
             for block in blocklist:
                 h = block(h, ys[index], use_in)
