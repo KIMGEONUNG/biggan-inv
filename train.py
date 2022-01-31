@@ -66,6 +66,7 @@ def parse_args():
     parser.add_argument('--retrain_epoch', type=int)
     parser.add_argument('--num_layer', type=int, default=2)
     parser.add_argument('--num_epoch', type=int, default=20)
+    parser.add_argument('--dim_f', type=int, default=16)
     parser.add_argument('--interval_save_loss', default=20)
     parser.add_argument('--interval_save_train', default=150)
     parser.add_argument('--interval_save_test', default=2000)
@@ -151,7 +152,8 @@ def train(dev, world_size, config, args,
                    activation=args.activation, 
                    fix_g=(not args.finetune_g),
                    init_e=args.weight_init,
-                   use_attention=args.use_attention)
+                   use_attention=args.use_attention,
+                   dim_f=args.dim_f)
     EG.train()
     D = models.Discriminator(**config)
     D.train()

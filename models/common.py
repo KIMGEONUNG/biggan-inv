@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
-from .encoders import EncoderF_Res
+from .encoders import (EncoderF_Res, EncoderF32_Res,
+                       EncoderZ_Res, EncoderF8_Res)
 from .biggan import Generator
 
 class VGG16Perceptual(nn.Module):
@@ -95,16 +96,39 @@ class Colorizer(nn.Module):
                  id_mid_layer=2, 
                  fix_g=False,
                  init_e=None,
-                 use_attention=False):
+                 use_attention=False,
+                 dim_f=16):
         super().__init__()
 
         self.id_mid_layer = id_mid_layer  
         self.use_attention = use_attention
 
-        self.E = EncoderF_Res(norm=norm_type,
-                              activation=activation,
-                              init=init_e,
-                              use_att=use_attention)
+        if dim_f == 32:
+            self.E = EncoderF32_Res(norm=norm_type,
+                                  activation=activation,
+                                  init=init_e,
+                                  use_att=use_attention)
+            self.id_mid_layer = 3  
+        elif dim_f == 16:
+            self.E = EncoderF_Res(norm=norm_type,
+                                  activation=activation,
+                                  init=init_e,
+                                  use_att=use_attention)
+            self.id_mid_layer = 2  
+        elif dim_f == 8:
+            self.E = EncoderF8_Res(norm=norm_type,
+                                  activation=activation,
+                                  init=init_e,
+                                  use_att=use_attention)
+            self.id_mid_layer = 1 
+        elif dim_f == 1:
+            self.E = EncoderZ_Res(norm=norm_type,
+                                  activation=activation,
+                                  init=init_e,
+                                  use_att=use_attention)
+            self.id_mid_layer = 0
+        else:
+            raise Exception('In valid dim_f')
 
         self.G = Generator(**config)
         self.G.load_state_dict(torch.load(path_ckpt_g, map_location='cpu'),
@@ -145,4 +169,3 @@ class Colorizer(nn.Module):
             self.E.train(mode)
         else:
             super().train(mode)
-

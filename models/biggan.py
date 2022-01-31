@@ -361,6 +361,12 @@ class Generator(nn.Module):
         else:
             ys = [y] * len(self.blocks)
 
+        if num_layer == 0:
+            # First linear layer
+            h = self.linear(z)
+            # Reshape
+            h = h.view(h.size(0), -1, self.bottom_width, self.bottom_width)
+
         # Loop over blocks
         for index, blocklist in enumerate(self.blocks):
             # Second inner loop in case block has multiple layers
