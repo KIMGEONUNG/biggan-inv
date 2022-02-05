@@ -30,6 +30,7 @@ def parse():
     parser.add_argument('--no_upsample', action='store_true')
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--epoch', type=int, default=0)
+    parser.add_argument('--dim_f', type=int, default=16)
 
     parser.add_argument('--type_resize', type=str, default='powerof',
             choices=['absolute', 'original', 'square', 'patch', 'powerof'])
@@ -74,7 +75,8 @@ def main(args):
                    args_loaded.norm_type,
                    id_mid_layer=args_loaded.num_layer,
                    activation=args_loaded.activation, 
-                   use_attention=args_loaded.use_attention)
+                   use_attention=args_loaded.use_attention,
+                   dim_f=args.dim_f)
     EG.load_state_dict(torch.load(path_eg, map_location='cpu'), strict=True)
     EG_ema = ExponentialMovingAverage(EG.parameters(), decay=0.99)
     EG_ema.load_state_dict(torch.load(path_eg_ema, map_location='cpu'))
