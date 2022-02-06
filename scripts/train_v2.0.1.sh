@@ -7,5 +7,5 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 python -W ignore train.py \
                     --schedule_type mult \
                     --dim_f 16 \
                     --path_log 'runs_c1000' \
-                    --task_name 'best' \
+                    --task_name 'best_wo_aug' \
                     --detail "best model w/o augment" 
