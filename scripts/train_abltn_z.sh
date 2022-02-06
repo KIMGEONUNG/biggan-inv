@@ -2,8 +2,6 @@
 
 CUDA_VISIBLE_DEVICES=4,5 python -W ignore train.py \
                     --port 12356 \
-                    --use_enhance \
-                    --coef_enhance 1.2 \
                     --vgg_target_layers 1 2 13 20 \
                     --size_batch 30 \
                     --num_epoch 10 \
