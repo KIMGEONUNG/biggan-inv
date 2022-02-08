@@ -28,6 +28,7 @@ def parse():
 
     parser.add_argument('--use_ema', action='store_true')
     parser.add_argument('--no_upsample', action='store_true')
+    parser.add_argument('--use_rgb', action='store_true')
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--epoch', type=int, default=0)
     parser.add_argument('--dim_f', type=int, default=16)
@@ -36,6 +37,7 @@ def parse():
             choices=['absolute', 'original', 'square', 'patch', 'powerof'])
     parser.add_argument('--num_power', type=int, default=4)
     parser.add_argument('--size_target', type=int, default=256)
+    parser.add_argument('--iter_max', type=int, default=50000)
 
     return parser.parse_args()
 
@@ -121,6 +123,9 @@ def main(args):
         os.mkdir(args.path_output)
 
     for i, (x, c) in enumerate(tqdm(grays)):
+        if i >= args.iter_max:
+            break
+
         size_original = x.shape[1:]
 
         c = torch.LongTensor([c])
@@ -146,7 +151,10 @@ def main(args):
             output = Resize(size_original)(output)
             lab_fusion = fusion(x, output)
 
-        im = ToPILImage()(lab_fusion)
+        if args.use_rgb:
+            im = ToPILImage()(output)
+        else:
+            im = ToPILImage()(lab_fusion)
         im.save('%s/%05d.jpg' % (args.path_output, i))
 
 
