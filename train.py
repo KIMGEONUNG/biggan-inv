@@ -72,8 +72,8 @@ def parse_args():
     parser.add_argument('--interval_save_test', default=2000)
     parser.add_argument('--interval_save_ckpt', default=4000)
 
-    parser.add_argument('--finetune_g', default=True)
-    parser.add_argument('--finetune_d', default=True)
+    parser.add_argument('--finetune_g', default=False)
+    parser.add_argument('--finetune_d', default=False)
 
     # Optimizer
     parser.add_argument("--lr", type=float, default=0.0001)
@@ -91,8 +91,8 @@ def parse_args():
     parser.add_argument('--print_config', default=False)
 
     # loader
-    parser.add_argument('--use_pretrained_g', default=True)
-    parser.add_argument('--use_pretrained_d', default=True)
+    parser.add_argument('--use_pretrained_g', default=False)
+    parser.add_argument('--use_pretrained_d', default=False)
 
     # Loss
     parser.add_argument('--loss_mse', action='store_true', default=True)
