@@ -3,7 +3,7 @@
 set -e
 
 # Must be set
-EPOCH=0
+EPOCH=6
 DIM_F=16
 NAME_TASK=ablation_fdim_rand
 
