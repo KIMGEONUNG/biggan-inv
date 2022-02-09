@@ -3,9 +3,9 @@
 set -e
 
 # Must be set
-EPOCH=9
-DIM_F=8
-NAME_TASK=ablation_fdim_08
+EPOCH=0
+DIM_F=16
+NAME_TASK=ablation_fdim_rand
 
 PATH_CKPT=ckpts/$NAME_TASK
 epoch=$(printf %03d $EPOCH)
@@ -19,7 +19,6 @@ python -W ignore colorize.py \
     --epoch $EPOCH \
     --dim_f $DIM_F \
     --iter_max 5000 \
-    --type_resize square \
     --use_rgb \
     --use_ema 
 
