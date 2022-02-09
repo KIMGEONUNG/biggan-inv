@@ -91,8 +91,8 @@ def parse_args():
     parser.add_argument('--print_config', default=False)
 
     # loader
-    parser.add_argument('--use_pretrained_g', default=True)
-    parser.add_argument('--use_pretrained_d', default=True)
+    parser.add_argument('--no_pretrained_g', action='store_true')
+    parser.add_argument('--no_pretrained_d', action='store_true')
 
     # Loss
     parser.add_argument('--loss_mse', action='store_true', default=True)
@@ -151,13 +151,15 @@ def train(dev, world_size, config, args,
                    id_mid_layer=args.num_layer, 
                    activation=args.activation, 
                    fix_g=(not args.finetune_g),
+                   load_g=(not args.no_pretrained_g),
                    init_e=args.weight_init,
                    use_attention=args.use_attention,
                    dim_f=args.dim_f)
     EG.train()
     D = models.Discriminator(**config)
     D.train()
-    if args.use_pretrained_d:
+    if not args.no_pretrained_d:
+        print('Use pretraind D')
         D.load_state_dict(torch.load(args.path_ckpt_d, map_location='cpu'),
                           strict=False)
 

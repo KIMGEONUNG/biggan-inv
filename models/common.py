@@ -95,6 +95,7 @@ class Colorizer(nn.Module):
                  activation='relu',
                  id_mid_layer=2, 
                  fix_g=False,
+                 load_g=True,
                  init_e=None,
                  use_attention=False,
                  dim_f=16):
@@ -131,8 +132,10 @@ class Colorizer(nn.Module):
             raise Exception('In valid dim_f')
 
         self.G = Generator(**config)
-        self.G.load_state_dict(torch.load(path_ckpt_g, map_location='cpu'),
-                               strict=False)
+        if load_g:
+            print('Use pretraind G')
+            self.G.load_state_dict(torch.load(path_ckpt_g, map_location='cpu'),
+                                   strict=False)
         self.fix_g = fix_g
         if fix_g:
             for p in self.G.parameters():
