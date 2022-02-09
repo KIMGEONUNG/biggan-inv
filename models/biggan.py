@@ -353,6 +353,8 @@ class Generator(nn.Module):
         return torch.tanh(self.output_layer(h))
 
     def forward_from(self, z, y, num_layer, h, use_in=False):
+        if num_layer == 0:
+            return self.forward(h, y)
         # If hierarchical, concatenate zs and ys
         if self.hier:
             zs = torch.split(z, self.z_chunk_size, 1)
