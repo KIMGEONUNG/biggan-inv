@@ -354,6 +354,8 @@ class Generator(nn.Module):
 
     def forward_from(self, z, y, num_layer, h, use_in=False):
         if num_layer == 0:
+            if len(h.shape) == 1:
+                h = h[None, ...]
             return self.forward(h, y)
         # If hierarchical, concatenate zs and ys
         if self.hier:
