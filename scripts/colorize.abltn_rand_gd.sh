@@ -3,9 +3,9 @@
 set -e
 
 # Must be set
-EPOCH=6
+EPOCH=9
 DIM_F=16
-NAME_TASK=ablation_fdim_rand
+NAME_TASK=ablation_rand_gd
 
 PATH_CKPT=ckpts/$NAME_TASK
 epoch=$(printf %03d $EPOCH)

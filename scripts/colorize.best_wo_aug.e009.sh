@@ -3,7 +3,7 @@
 set -e
 
 # Must be set
-EPOCH=5
+EPOCH=9
 DIM_F=16
 NAME_TASK=best_wo_aug
 
