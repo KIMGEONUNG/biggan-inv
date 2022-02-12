@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
-from .encoders import (EncoderF_Res, EncoderF32_Res,
+from .encoders import (EncoderF_Res, EncoderF32_Res, EncoderF64_Res,
                        EncoderZ_Res, EncoderF8_Res)
 from .biggan import Generator
 
@@ -104,7 +104,13 @@ class Colorizer(nn.Module):
         self.id_mid_layer = id_mid_layer  
         self.use_attention = use_attention
 
-        if dim_f == 32:
+        if dim_f == 64:
+            self.E = EncoderF64_Res(norm=norm_type,
+                                  activation=activation,
+                                  init=init_e,
+                                  use_att=use_attention)
+            self.id_mid_layer = 4  
+        elif dim_f == 32:
             self.E = EncoderF32_Res(norm=norm_type,
                                   activation=activation,
                                   init=init_e,
