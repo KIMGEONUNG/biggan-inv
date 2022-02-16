@@ -98,11 +98,16 @@ class Colorizer(nn.Module):
                  load_g=True,
                  init_e=None,
                  use_attention=False,
+                 use_res=True,
                  dim_f=16):
         super().__init__()
 
         self.id_mid_layer = id_mid_layer  
         self.use_attention = use_attention
+        self.use_res = use_res
+
+        if not use_res:
+            print('Warning: without residual path')
 
         if dim_f == 64:
             self.E = EncoderF64_Res(norm=norm_type,
@@ -120,6 +125,7 @@ class Colorizer(nn.Module):
             self.E = EncoderF_Res(norm=norm_type,
                                   activation=activation,
                                   init=init_e,
+                                  use_res=use_res,
                                   use_att=use_attention)
             self.id_mid_layer = 2  
         elif dim_f == 8:

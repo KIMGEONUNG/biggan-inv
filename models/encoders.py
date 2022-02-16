@@ -50,17 +50,20 @@ class ResConvBlock(nn.Module):
             activation='relu', 
             pool='avg', 
             norm='batch', 
+            use_res=True, 
             **kwargs):
         super().__init__()
 
         self.is_down = is_down
         self.has_condition = False
+        self.use_res = use_res
 
         # Convolution
-        self.conv = nn.Conv2d(ch_in, ch_out, 
-                kernel_size=1, 
-                stride=1, 
-                padding=0)
+        if self.use_res:
+            self.conv = nn.Conv2d(ch_in, ch_out, 
+                    kernel_size=1, 
+                    stride=1, 
+                    padding=0)
 
         self.conv_1 = nn.Conv2d(ch_in, ch_out, 
                 kernel_size=3, 
@@ -145,9 +148,12 @@ class ResConvBlock(nn.Module):
         x_ = self.conv_2(x_)
 
         # Main Path
-        if self.is_down:
-            x = self.pool(x)
-        x = self.conv(x)
+        if self.use_res:
+            if self.is_down:
+                x = self.pool(x)
+            x = self.conv(x)
+        else:
+            x = 0
 
         # Merge
         x = x + x_
@@ -558,7 +564,8 @@ class EncoderF_Res(nn.Module):
                  norm='batch',
                  activation='relu',
                  init='ortho',
-                 use_att=False):
+                 use_att=False,
+                 use_res=True):
         super().__init__()
 
         self.init = init
@@ -584,30 +591,35 @@ class EncoderF_Res(nn.Module):
                                  is_down=False, 
                                  activation=activation,
                                  norm=norm,
+                                 use_res=use_res,
                                  **kwargs)
         # output is 192 x 128 x 128 
         self.res2 = ResConvBlock(ch_unit * 1, ch_unit * 2,
                                  is_down=True, 
                                  activation=activation,
                                  norm=norm,
+                                 use_res=use_res,
                                  **kwargs)
         # output is  384 x 64 x 64 
         self.res3 = ResConvBlock(ch_unit * 2, ch_unit * 4,
                                  is_down=True, 
                                  activation=activation,
                                  norm=norm,
+                                 use_res=use_res,
                                  **kwargs)
         # output is  768 x 32 x 32 
         self.res4 = ResConvBlock(ch_unit * 4, ch_unit * 8,
                                  is_down=True, 
                                  activation=activation,
                                  norm=norm,
+                                 use_res=use_res,
                                  **kwargs)
         # output is  768 x 16 x 16 
         self.res5 = ResConvBlock(ch_unit * 8, ch_unit * 8,
                                  is_down=True, 
                                  activation=activation,
                                  norm=norm, 
+                                 use_res=use_res,
                                  dropout=None,
                                  **kwargs)
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
-from models import EncoderF64_Res, EncoderF32_Res, EncoderF_Res, EncoderZ_Res, Colorizer
+from models import (EncoderF64_Res, EncoderF32_Res, EncoderF_Res, EncoderZ_Res,
+                    Colorizer, ResConvBlock)
 import torch
 import re
 
@@ -16,6 +17,22 @@ def commenter(fn_test):
 
 
 class Tester():
+
+    @commenter
+    def test_ResBlock_1():
+        x = torch.randn(4, 6, 256, 256)
+        model = ResConvBlock(6, 10, is_down=True)
+        model.float()
+        y = model(x)
+        assert y.shape == torch.Size([4, 10, 128, 128])
+
+    @commenter
+    def test_ResBlock_2():
+        x = torch.randn(4, 6, 256, 256)
+        model = ResConvBlock(6, 10, is_down=True, use_res=False)
+        model.float()
+        y = model(x)
+        assert y.shape == torch.Size([4, 10, 128, 128])
 
     @commenter
     def test_EncoderZ_Res():
@@ -85,6 +102,30 @@ class Tester():
                       init_e=None,
                       use_attention=False,
                       dim_f=8)
+        EG.float()
+        c = torch.LongTensor([1, 2, 3, 4])
+        z = torch.zeros((4, 119))
+        z.normal_(mean=0, std=0.8)
+        x = torch.randn(4, 1, 256, 256) 
+        y = EG(x, c, z)
+        assert y.shape == torch.Size([4, 3, 256, 256])
+
+    @commenter
+    def test_Colorizer_16():
+        import pickle
+        with open('./pretrained/config.pickle', 'rb') as f:
+            config = pickle.load(f)
+        EG = Colorizer(config,
+                      './pretrained/G_ema_256.pth',
+                      'adabatch',
+                      id_mid_layer=2,
+                      activation='relu',
+                      fix_g=False,
+                      init_e=None,
+                      use_attention=False,
+                      use_res=False,
+                      use_cond_e=False,
+                      dim_f=16)
         EG.float()
         c = torch.LongTensor([1, 2, 3, 4])
         z = torch.zeros((4, 119))
