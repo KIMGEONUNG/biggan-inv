@@ -9,6 +9,6 @@ CUDA_VISIBLE_DEVICES=0,1 python -W ignore train.py \
                     --no_res \
                     --schedule_type mult \
                     --path_log 'runs_c100' \
-                    --task_name 'ablation_noc' \
+                    --task_name 'ablation_norc' \
                     --index_target {0..99} \
                     --detail 'without residual path and class condition' 
