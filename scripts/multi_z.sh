@@ -13,5 +13,7 @@ python -W ignore app/colorize_zs.py \
     --path_ckpt './ckpts/fix_lpips' \
     --path_output $dir_target \
     --epoch 11 \
+    --z_std 2 \
+    --num_z 5 \
     --use_shuffle \
     --use_ema 

@@ -35,8 +35,7 @@ def parse():
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--epoch', type=int, default=0)
 
-    parser.add_argument('--index_target', type=int, nargs='+', 
-            default=list(range(1000)))
+    parser.add_argument('--targets', type=int, nargs='+')
 
     parser.add_argument('--type_resize', type=str, default='powerof',
             choices=['absolute', 'original', 'square', 'patch', 'powerof'])
@@ -50,17 +49,6 @@ def parse():
     parser.add_argument('--use_shuffle', action='store_true')
 
     return parser.parse_args()
-
-
-def extract(dataset, target_ids):
-    '''
-    extract data element based on class index
-    '''
-    indices =  []
-    for i in range(len(dataset.targets)):
-        if dataset.targets[i] in target_ids:
-            indices.append(i)
-    return Subset(dataset, indices)
 
 
 def main(args):
@@ -92,9 +80,6 @@ def main(args):
                         transform=transforms.Compose([
                             transforms.ToTensor(),
                             transforms.Grayscale()]))
-    ids = list(range(0, 50000))
-    if args.use_shuffle:
-        shuffle(ids)
 
     EG = Colorizer(config, 
                    args.path_ckpt_g,
@@ -145,7 +130,7 @@ def main(args):
     if not os.path.exists(args.path_output):
         os.mkdir(args.path_output)
 
-    for i in tqdm(ids):
+    for i in tqdm(args.targets):
         x_, c_ = grays[i]
         size_original = x_.shape[1:]
 
