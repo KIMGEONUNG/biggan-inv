@@ -40,7 +40,7 @@ def parse_args():
 
     # Mode
     parser.add_argument('--norm_type', default='adabatch', 
-            choices=['instance', 'batch', 'layer', 'adain', 'adabatch'])
+            choices=['instance', 'batch', 'layer', 'adain', 'adabatch', 'id'])
     parser.add_argument('--activation', default='relu', 
             choices=['relu', 'lrelu', 'sigmoid'])
     parser.add_argument('--weight_init', default='ortho', 
