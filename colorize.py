@@ -78,6 +78,7 @@ def main(args):
                    id_mid_layer=args_loaded.num_layer,
                    activation=args_loaded.activation, 
                    use_attention=args_loaded.use_attention,
+                   # use_res=not args_loaded.no_res,
                    dim_f=args.dim_f)
     EG.load_state_dict(torch.load(path_eg, map_location='cpu'), strict=True)
     EG_ema = ExponentialMovingAverage(EG.parameters(), decay=0.99)
