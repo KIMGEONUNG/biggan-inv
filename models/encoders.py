@@ -568,6 +568,7 @@ class EncoderF_Res(nn.Module):
                  activation='relu',
                  init='ortho',
                  use_att=False,
+                 use_dropout=True,
                  use_res=True):
         super().__init__()
 
@@ -589,12 +590,16 @@ class EncoderF_Res(nn.Module):
                 eps=1e-06)
             self.att = Attention(384, conv4att)
 
+        p_dropout = 0.2 if use_dropout else None
+        if p_dropout is None:
+            print("Warning: No dropout in Encoder")
         # output is 96 x 256 x 256
         self.res1 = ResConvBlock(ch_in, ch_unit * 1,
                                  is_down=False, 
                                  activation=activation,
                                  norm=norm,
                                  use_res=use_res,
+                                 dropout=p_dropout,
                                  **kwargs)
         # output is 192 x 128 x 128 
         self.res2 = ResConvBlock(ch_unit * 1, ch_unit * 2,
@@ -602,6 +607,7 @@ class EncoderF_Res(nn.Module):
                                  activation=activation,
                                  norm=norm,
                                  use_res=use_res,
+                                 dropout=p_dropout,
                                  **kwargs)
         # output is  384 x 64 x 64 
         self.res3 = ResConvBlock(ch_unit * 2, ch_unit * 4,
@@ -609,6 +615,7 @@ class EncoderF_Res(nn.Module):
                                  activation=activation,
                                  norm=norm,
                                  use_res=use_res,
+                                 dropout=p_dropout,
                                  **kwargs)
         # output is  768 x 32 x 32 
         self.res4 = ResConvBlock(ch_unit * 4, ch_unit * 8,
@@ -616,6 +623,7 @@ class EncoderF_Res(nn.Module):
                                  activation=activation,
                                  norm=norm,
                                  use_res=use_res,
+                                 dropout=p_dropout,
                                  **kwargs)
         # output is  768 x 16 x 16 
         self.res5 = ResConvBlock(ch_unit * 8, ch_unit * 8,

@@ -73,6 +73,7 @@ def parse_args():
     parser.add_argument('--interval_save_train', default=150)
     parser.add_argument('--interval_save_test', default=2000)
     parser.add_argument('--interval_save_ckpt', default=4000)
+    parser.add_argument('--no_dropout', action='store_true')
 
     parser.add_argument('--finetune_g', default=True)
     parser.add_argument('--finetune_d', default=True)
@@ -157,6 +158,7 @@ def train(dev, world_size, config, args,
                    init_e=args.weight_init,
                    use_attention=args.use_attention,
                    use_res=(not args.no_res),
+                   use_dropout=(not args.no_dropout), 
                    dim_f=args.dim_f)
     EG.train()
     D = models.Discriminator(**config)

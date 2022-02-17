@@ -99,6 +99,7 @@ class Colorizer(nn.Module):
                  init_e=None,
                  use_attention=False,
                  use_res=True,
+                 use_dropout=True,
                  dim_f=16):
         super().__init__()
 
@@ -126,6 +127,7 @@ class Colorizer(nn.Module):
                                   activation=activation,
                                   init=init_e,
                                   use_res=use_res,
+                                  use_dropout=use_dropout,
                                   use_att=use_attention)
             self.id_mid_layer = 2  
         elif dim_f == 8:
