@@ -6,7 +6,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -W ignore train.py \
                     --size_batch 30 \
                     --num_epoch 10 \
                     --norm_type id \
-                    --no_res
+                    --no_res \
                     --schedule_type mult \
                     --path_log 'runs_c100' \
                     --task_name 'ablation_nonorm_nor' \
