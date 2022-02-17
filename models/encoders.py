@@ -78,6 +78,9 @@ class ResConvBlock(nn.Module):
         if norm == 'batch':
             self.normalize_1 = nn.BatchNorm2d(ch_in)
             self.normalize_2 = nn.BatchNorm2d(ch_out)
+        elif norm == 'id':
+            self.normalize_1 = nn.Identity()
+            self.normalize_2 = nn.Identity()
         elif norm == 'instance':
             self.normalize_1 = nn.InstanceNorm2d(ch_in)
             self.normalize_2 = nn.InstanceNorm2d(ch_out)
