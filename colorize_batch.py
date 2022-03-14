@@ -6,10 +6,11 @@ import torch
 import pickle
 import argparse
 from torchvision.datasets import ImageFolder
-import torchvision.transforms as transforms
-from torchvision.transforms import (ToPILImage, Resize, Compose,
-                                    Grayscale, CenterCrop)
 from torchvision.utils import make_grid
+from torch.utils.data import DataLoader
+import torchvision.transforms as transforms
+from torchvision.transforms import (ToPILImage, Resize, Compose, CenterCrop,
+                                    Grayscale, ToTensor)
 from tqdm import tqdm
 from torch_ema import ExponentialMovingAverage
 from utils.common_utils import set_seed, rgb2lab, lab2rgb
@@ -25,14 +26,16 @@ def parse():
     parser.add_argument('--path_config', default='./pretrained/config.pickle')
     parser.add_argument('--path_ckpt_g', default='./pretrained/G_ema_256.pth')
     parser.add_argument('--path_ckpt', default='./ckpts/baseline_1000')
-    parser.add_argument('--path_output', default='./results')
-    parser.add_argument('--path_imgnet_val', default='./imgnet/val')
+    parser.add_argument('--path_output', default='./results_batch')
+    parser.add_argument('--path_dataset', default='./imgnet/val')
 
     parser.add_argument('--use_ema', action='store_true')
-    parser.add_argument('--use_square', action='store_true')
+    parser.add_argument('--no_upsample', action='store_true')
+    parser.add_argument('--use_rgb', action='store_true')
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--epoch', type=int, default=0)
     parser.add_argument('--dim_f', type=int, default=16)
+    parser.add_argument('--size_batch', type=int, default=16)
 
     parser.add_argument('--type_resize', type=str, default='powerof',
             choices=['absolute', 'original', 'square', 'patch', 'powerof'])
@@ -68,9 +71,15 @@ def main(args):
 
     dev = args.device
 
-    grays = ImageFolder(args.path_imgnet_val,
+    grays = ImageFolder(args.path_dataset,
                         transform=transforms.Compose([
-                            transforms.ToTensor()]))
+                            Resize(256),
+                            CenterCrop(256),
+                            Grayscale(),
+                            ToTensor(),
+                            ]))
+
+    grays = DataLoader(grays, batch_size=args.size_batch, pin_memory=True)
 
     EG = Colorizer(config, 
                    args.path_ckpt_g,
@@ -78,6 +87,7 @@ def main(args):
                    id_mid_layer=args_loaded.num_layer,
                    activation=args_loaded.activation, 
                    use_attention=args_loaded.use_attention,
+                   # use_res=not args_loaded.no_res,
                    dim_f=args.dim_f)
     EG.load_state_dict(torch.load(path_eg, map_location='cpu'), strict=True)
     EG_ema = ExponentialMovingAverage(EG.parameters(), decay=0.99)
@@ -87,34 +97,6 @@ def main(args):
     EG.float()
     EG.to(dev)
 
-    resizer = None
-    if args.type_resize == 'absolute':
-        resizer = Resize((args.size_target))
-    elif args.type_resize == 'original':
-        resizer = Compose([])
-    elif args.type_resize == 'square':
-        resizer = Resize((args.size_target, args.size_target))
-    elif args.type_resize == 'powerof':
-        assert args.size_target % (2 ** args.num_power) == 0
-
-        def resizer(x):
-            length_long = max(x.shape[-2:])
-            length_sort = min(x.shape[-2:])
-            unit = ceil((length_long * (args.size_target / length_sort)) 
-                                        / (2 ** args.num_power))
-            long = unit * (2 ** args.num_power)
-
-            if x.shape[-1] > x.shape[-2]:
-                fn = Resize((args.size_target, long))
-            else:
-                fn = Resize((long, args.size_target))
-
-            return fn(x)
-    elif args.type_resize == 'patch':
-        resizer = Resize((args.size_target))
-    else:
-        raise Exception('Invalid resize type')
-    
     if args.use_ema:
         print('Use EMA')
         EG_ema.copy_to()
@@ -122,50 +104,31 @@ def main(args):
     if not os.path.exists(args.path_output):
         os.mkdir(args.path_output)
 
-    for i, (x_gt, c) in enumerate(tqdm(grays)):
-        if i >= args.iter_max:
-            break
+    for i, (x, c) in enumerate(tqdm(grays)):
 
-        x = Grayscale()(x_gt) 
-        x_gray = Grayscale()(x_gt) 
-
-        size_original = x.shape[1:]
-
-        c = torch.LongTensor([c])
-        x = x.unsqueeze(0)
+        # c = torch.LongTensor(c)
         x, c = x.to(dev), c.to(dev)
-        z = torch.zeros((1, args_loaded.dim_z)).to(dev)
+        z = torch.zeros((args.size_batch, args_loaded.dim_z)).to(dev)
         z.normal_(mean=0, std=0.8)
-        x_down = resizer(x)
 
         with torch.no_grad():
-            output = EG(x_down, c, z)
+            output = EG(x, c, z)
             output = output.add(1).div(2)
 
-        x = x.squeeze(0).cpu()
-        x_down = x_down.squeeze(0).cpu()
-        output = output.squeeze(0)
         output = output.detach().cpu()
+        x = x.detach().cpu()
 
-        output = Resize(size_original)(output)
-        lab_fusion = fusion(x, output)
-
-        x_gray = torch.cat([x_gray, x_gray, x_gray], dim=0)
-        targets = [x_gt, x_gray, output, lab_fusion]
-
-        if args.use_square:
-            crop = CenterCrop(min(size_original[-1], size_original[-2]))
-            targets = [crop(target) for target in targets]
-
-        grid = make_grid(targets, padding=0, pad_value=1)
-        im = ToPILImage()(grid)
-        im.save('%s/%05d.jpg' % (args.path_output, i))
+        with torch.no_grad():
+            lab_fusion = fusion(x, output)
+        lab_fusion = make_grid(lab_fusion, nrow=10, padding=0)
+        im = ToPILImage()(lab_fusion)
+        im.save('%s/%09d.jpg' % (args.path_output, i))
 
 
 def fusion(img_gray, img_rgb):
     img_gray *= 100
     ab = rgb2lab(img_rgb)[..., 1:, :, :]
-    lab = torch.cat([img_gray, ab], dim=0)
+    lab = torch.cat([img_gray, ab], dim=1)
     rgb = lab2rgb(lab)
     return rgb 
 

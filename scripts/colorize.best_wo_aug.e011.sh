@@ -18,6 +18,7 @@ python -W ignore colorize.py \
     --path_output $dir_target \
     --epoch $EPOCH \
     --dim_f $DIM_F \
+    --seed -1 \
     --use_ema 
 
 # MAKE_GRID
