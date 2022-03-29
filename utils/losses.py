@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision.transforms import Normalize
 
 
 def loss_fn_d(D, c, real, fake):
@@ -12,7 +13,7 @@ def loss_fn_d(D, c, real, fake):
     return loss_d
 
 
-def loss_fn_g(D, vgg_per, x, c, args, fake):
+def loss_fn_g(D, segmentator, x, c, args, fake, smt_gt):
     loss_dic = {}
     loss = 0
     if args.loss_adv:
@@ -21,15 +22,13 @@ def loss_fn_g(D, vgg_per, x, c, args, fake):
         loss += loss_g 
         loss_dic['loss_g'] = loss_g 
 
-    fake = fake.add(1).div(2)
-    if args.loss_mse:
-        loss_mse = args.coef_mse * nn.MSELoss()(x, fake)
-        loss += loss_mse
-        loss_dic['mse'] = loss_mse
-    if args.loss_lpips:
-        loss_lpips = args.coef_lpips * vgg_per(x, fake)
-        loss += loss_lpips
-        loss_dic['lpips'] = loss_lpips
+    # fake = fake.add(1).div(2)
+    fake = Normalize(mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225])(fake)
+    smt = segmentator(fake)['out'][0] 
+    loss_mce = args.coef_mce * nn.CrossEntropyLoss()(smt, smt_gt)
+    loss += loss_mce
+    loss_dic['mce'] = loss_mce
 
     return loss, loss_dic
 

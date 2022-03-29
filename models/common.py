@@ -99,7 +99,9 @@ class Colorizer(nn.Module):
                  init_e=None,
                  use_attention=False,
                  use_res=True,
-                 dim_f=16):
+                 dim_f=16,
+                 e_ch_in=1
+    ):
         super().__init__()
 
         self.id_mid_layer = id_mid_layer  
@@ -113,12 +115,14 @@ class Colorizer(nn.Module):
             self.E = EncoderF64_Res(norm=norm_type,
                                   activation=activation,
                                   init=init_e,
+                                  ch_in=e_ch_in,
                                   use_att=use_attention)
             self.id_mid_layer = 4  
         elif dim_f == 32:
             self.E = EncoderF32_Res(norm=norm_type,
                                   activation=activation,
                                   init=init_e,
+                                  ch_in=e_ch_in,
                                   use_att=use_attention)
             self.id_mid_layer = 3  
         elif dim_f == 16:
@@ -126,18 +130,21 @@ class Colorizer(nn.Module):
                                   activation=activation,
                                   init=init_e,
                                   use_res=use_res,
+                                  ch_in=e_ch_in,
                                   use_att=use_attention)
             self.id_mid_layer = 2  
         elif dim_f == 8:
             self.E = EncoderF8_Res(norm=norm_type,
                                   activation=activation,
                                   init=init_e,
+                                  ch_in=e_ch_in,
                                   use_att=use_attention)
             self.id_mid_layer = 1 
         elif dim_f == 1:
             self.E = EncoderZ_Res(norm=norm_type,
                                   activation=activation,
                                   init=init_e,
+                                  ch_in=e_ch_in,
                                   use_att=use_attention)
             self.id_mid_layer = 0
         else:

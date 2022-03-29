@@ -22,11 +22,10 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from utils.losses import loss_fn_d, loss_fn_g
 from utils.common_utils import (extract_sample, set_seed,
-        make_grid_multi, prepare_dataset)
+        make_grid_multi, prepare_dataset, label_to_one_hot_label)
 from utils.logger import (make_log_scalar, make_log_img, 
                           make_log_ckpt, load_for_retrain,
                           load_for_retrain_EMA)
-from utils.common_utils import color_enhacne_blend
 import utils
 
 from torch_ema import ExponentialMovingAverage
@@ -53,11 +52,11 @@ def parse_args():
     parser.add_argument('--path_vgg', default='./pretrained/vgg16.pickle')
     parser.add_argument('--path_ckpt_g', default='./pretrained/G_ema_256.pth')
     parser.add_argument('--path_ckpt_d', default='./pretrained/D_256.pth')
-    parser.add_argument('--path_imgnet_train', default='./imgnet/train')
-    parser.add_argument('--path_imgnet_val', default='./imgnet/val')
+    parser.add_argument('--path_imgnet_train', default='./dataset/train')
+    parser.add_argument('--path_imgnet_val', default='./dataset/valid')
 
     parser.add_argument('--index_target', type=int, nargs='+', 
-            default=list(range(1000)))
+            default=list(range(10, 20)))
     parser.add_argument('--num_worker', type=int, default=8)
     parser.add_argument('--iter_sample', type=int, default=3)
 
@@ -65,6 +64,7 @@ def parse_args():
     parser.add_argument('--retrain', action='store_true')
     parser.add_argument('--retrain_epoch', type=int)
     parser.add_argument('--num_layer', type=int, default=2)
+    parser.add_argument('--e_ch_in', type=int, default=21)
     parser.add_argument('--num_epoch', type=int, default=20)
     parser.add_argument('--dim_f', type=int, default=16)
     parser.add_argument('--no_res', action='store_true')
@@ -100,8 +100,7 @@ def parse_args():
     parser.add_argument('--loss_mse', action='store_true', default=True)
     parser.add_argument('--loss_lpips', action='store_true', default=True)
     parser.add_argument('--loss_adv', action='store_true', default=True)
-    parser.add_argument('--coef_mse', type=float, default=1.0)
-    parser.add_argument('--coef_lpips', type=float, default=0.2)
+    parser.add_argument('--coef_mce', type=float, default=1.0)
     parser.add_argument('--coef_adv', type=float, default=0.03)
     parser.add_argument('--vgg_target_layers', type=int, nargs='+',
                             default=[1, 2, 13, 20])
@@ -115,8 +114,6 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--size_batch', type=int, default=60)
     parser.add_argument('--port', type=str, default='12355')
-    parser.add_argument('--use_enhance', action='store_true')
-    parser.add_argument('--coef_enhance', type=float, default=1.5)
     parser.add_argument('--use_attention', action='store_true')
 
     # GPU
@@ -139,7 +136,7 @@ def train(dev, world_size, config, args,
           sample_valid=None,
           path_ckpts=None,
           path_log=None,
-          ):
+):
 
     is_main_dev = dev == 0 
     setup_dist(dev, world_size, args.port)
@@ -157,6 +154,7 @@ def train(dev, world_size, config, args,
                    init_e=args.weight_init,
                    use_attention=args.use_attention,
                    use_res=(not args.no_res),
+                   e_ch_in=args.e_ch_in,
                    dim_f=args.dim_f)
     EG.train()
     D = models.Discriminator(**config)
@@ -165,6 +163,11 @@ def train(dev, world_size, config, args,
         print('Use pretraind D')
         D.load_state_dict(torch.load(args.path_ckpt_d, map_location='cpu'),
                           strict=False)
+
+    segmentator = torch.hub.load('pytorch/vision:v0.8.0',
+                                 'deeplabv3_resnet101',
+                                  pretrained=True)
+    segmentator.eval()
 
     # Optimizer
     optimizer_g = optim.Adam([p for p in EG.parameters() if p.requires_grad],
@@ -202,16 +205,15 @@ def train(dev, world_size, config, args,
     # Set Device 
     EG = EG.to(dev)
     D = D.to(dev)
+    segmentator = segmentator.to(dev)
     vgg_per = VGG16Perceptual(args.path_vgg, args.vgg_target_layers).to(dev)
     utils.optimizer_to(optimizer_g, 'cuda:%d' % dev)
     utils.optimizer_to(optimizer_d, 'cuda:%d' % dev)
 
     # EMA
     ema_g = ExponentialMovingAverage(EG.parameters(), decay=args.decay_ema_g)
-    ema_d = ExponentialMovingAverage(D.parameters(), decay=args.decay_ema_d)
     if args.retrain:
-        load_for_retrain_EMA(ema_g, ema_d,
-                             args.retrain_epoch, path_ckpts, 'cpu')
+        load_for_retrain_EMA(ema_g, args.retrain_epoch, path_ckpts, 'cpu')
 
     # DDP
     EG = DDP(EG, device_ids=[dev], 
@@ -219,6 +221,8 @@ def train(dev, world_size, config, args,
     D = DDP(D, device_ids=[dev], 
             find_unused_parameters=False)
     vgg_per = DDP(vgg_per, device_ids=[dev], 
+                  find_unused_parameters=True)
+    segmentator = DDP(segmentator, device_ids=[dev], 
                   find_unused_parameters=True)
      
     # Datasets
@@ -228,7 +232,6 @@ def train(dev, world_size, config, args,
             sampler=sampler, pin_memory=True,
             num_workers=args.num_worker, drop_last=True)
 
-    color_enhance = partial(color_enhacne_blend, factor=args.coef_enhance)
 
     # AMP
     scaler = GradScaler()
@@ -237,11 +240,11 @@ def train(dev, world_size, config, args,
         sampler.set_epoch(epoch)
         tbar = tqdm(dataloader)
         tbar.set_description('epoch: %03d' % epoch)
-        for i, (x, c) in enumerate(tbar):
+        for i, (x, c, smt) in enumerate(tbar):
             EG.train()
 
-            x, c = x.to(dev), c.to(dev)
-            x_gray = transforms.Grayscale()(x)
+            smt_one_hot = label_to_one_hot_label(smt, args.e_ch_in).to(dev)
+            x, c, smt = x.to(dev), c.to(dev), smt.to(dev)
 
             # Sample z
             z = torch.zeros((args.size_batch, args.dim_z)).to(dev)
@@ -249,17 +252,13 @@ def train(dev, world_size, config, args,
 
             # Generate fake image
             with autocast():
-                fake = EG(x_gray, c, z)
+                fake = EG(smt_one_hot, c, z)
 
             # DISCRIMINATOR 
-            x_real = x
-            if args.use_enhance:
-                x_real =  color_enhance(x)
-
             optimizer_d.zero_grad()
             cal_loss_d = lambda: loss_fn_d(D=D,
                                            c=c,
-                                           real=x_real,
+                                           real=x,
                                            fake=fake.detach())
             with autocast():
                 loss_d = cal_loss_d()
@@ -270,11 +269,12 @@ def train(dev, world_size, config, args,
             # GENERATOR
             optimizer_g.zero_grad()
             cal_loss_g = lambda: loss_fn_g(D=D,
-                                           vgg_per=vgg_per,
+                                           segmentator=segmentator,
                                            x=x,
                                            c=c,
                                            args=args,
-                                           fake=fake)
+                                           fake=fake,
+                                           smt_gt=smt)
             with autocast():
                 loss, loss_dic = cal_loss_g()
             scaler.scale(loss).backward()
@@ -283,7 +283,6 @@ def train(dev, world_size, config, args,
 
             # EMA
             if is_main_dev:
-                ema_d.update()
                 ema_g.update()
 
             loss_dic['loss_d'] = loss_d
@@ -319,7 +318,6 @@ def train(dev, world_size, config, args,
                           schedule_g=scheduler_g,
                           schedule_d=scheduler_d,
                           ema_g=ema_g,
-                          ema_d=ema_d,
                           num_iter=num_iter,
                           args=args, epoch=epoch, path_ckpts=path_ckpts)
 

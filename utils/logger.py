@@ -7,7 +7,7 @@ from torch.cuda.amp import autocast
 def make_log_ckpt(EG, D,
                   optim_g, optim_d,
                   schedule_g, schedule_d, 
-                  ema_g, ema_d, 
+                  ema_g, 
                   num_iter, args, epoch, path_ckpts):
     # Encoder&Generator
     name = 'EG_%03d.ckpt' % epoch 
@@ -23,11 +23,6 @@ def make_log_ckpt(EG, D,
     name = 'EG_EMA_%03d.ckpt' % epoch 
     path = join(path_ckpts, name) 
     torch.save(ema_g.state_dict(), path) 
-
-    # EMA Discriminator
-    name = 'D_EMA_%03d.ckpt' % epoch 
-    path = join(path_ckpts, name) 
-    torch.save(ema_d.state_dict(), path) 
 
     # Oters
     name = 'OTHER_%03d.ckpt' % epoch 
@@ -65,18 +60,13 @@ def load_for_retrain(EG, D,
 
     return state['num_iter']
 
-def load_for_retrain_EMA(ema_g, ema_d, epoch, path_ckpts, dev):
+
+def load_for_retrain_EMA(ema_g, epoch, path_ckpts, dev):
     # Encoder&Generator
     name = 'EG_EMA_%03d.ckpt' % epoch 
     path = join(path_ckpts, name) 
     state = torch.load(path, map_location=dev)
     ema_g.load_state_dict(state)
-
-    # Discriminator
-    name = 'D_EMA_%03d.ckpt' % epoch 
-    path = join(path_ckpts, name) 
-    state = torch.load(path, map_location=dev)
-    ema_d.load_state_dict(state)
 
 
 def make_log_scalar(writer, num_iter, loss_dic: dict):
