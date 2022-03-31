@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from utils import to_gray
 
 
 def loss_fn_d(D, c, real, fake):
@@ -30,6 +31,22 @@ def loss_fn_g(D, vgg_per, x, c, args, fake):
         loss_lpips = args.coef_lpips * vgg_per(x, fake)
         loss += loss_lpips
         loss_dic['lpips'] = loss_lpips
+
+    if args.loss_gmse or args.loss_glpips:
+        
+        x_g = to_gray(x)
+        fake_g = to_gray(fake)
+        
+        if args.loss_gmse:
+            loss_gmse = args.coef_gmse * nn.MSELoss()(x_g, fake_g)
+            loss += loss_gmse
+            loss_dic['gmse'] = loss_gmse
+        if args.loss_glpips:
+            x_g_3c = x_g.repeat(1, 3, 1, 1)
+            fake_g_3c = fake_g.repeat(1, 3, 1, 1) 
+            loss_glpips = args.coef_glpips * vgg_per(x_g_3c, fake_g_3c)
+            loss += loss_glpips
+            loss_dic['glpips'] = loss_glpips
 
     return loss, loss_dic
 

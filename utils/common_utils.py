@@ -36,6 +36,22 @@ def optimizer_to(optim, device):
                         subparam._grad.data = subparam._grad.data.to(device)
 
 
+def to_gray(x: torch.Tensor):
+    len_shape = len(x.shape)
+    coef_r = 0.2989 
+    coef_g = 0.5870 
+    coef_b = 0.1140
+
+    if len_shape in [3, 4]:
+        x_g = coef_r * x[..., 0:1, :, :] \
+            + coef_g * x[..., 1:2, :, :] \
+            + coef_b * x[..., 2:3, :, :]
+    else:
+        raise Exception('Invalid shape detected')
+
+    return x_g
+
+
 def set_seed(seed):
     import random
     import numpy as np
