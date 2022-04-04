@@ -90,9 +90,9 @@ def prepare_dataset(
     return dataset, dataset_val
 
 
-def extract_sample(dataset, size_batch, num_iter, is_shuffle):
+def extract_sample(dataset, size_batch, num_iter, is_shuffle, pin_memory=True):
     dataloader = DataLoader(dataset, batch_size=size_batch,
-            shuffle=is_shuffle, num_workers=4, pin_memory=True,
+            shuffle=is_shuffle, num_workers=4, pin_memory=pin_memory,
             drop_last=True)
     xs = []
     xgs = []

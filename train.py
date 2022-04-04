@@ -185,6 +185,7 @@ def train(dev, world_size, config, args,
         scheduler_d = optim.lr_scheduler.LambdaLR(optimizer=optimizer_d,
                         lr_lambda=schedule)
 
+
     # Retrain(opt)
     num_iter = 0
     epoch_start = 0
@@ -206,6 +207,7 @@ def train(dev, world_size, config, args,
     utils.optimizer_to(optimizer_g, 'cuda:%d' % dev)
     utils.optimizer_to(optimizer_d, 'cuda:%d' % dev)
 
+
     # EMA
     ema_g = ExponentialMovingAverage(EG.parameters(), decay=args.decay_ema_g)
     ema_d = ExponentialMovingAverage(D.parameters(), decay=args.decay_ema_d)
@@ -214,6 +216,9 @@ def train(dev, world_size, config, args,
                              args.retrain_epoch, path_ckpts, 'cpu')
 
     # DDP
+    torch.cuda.set_device(dev)
+    torch.cuda.empty_cache()
+
     EG = DDP(EG, device_ids=[dev], 
              find_unused_parameters=True)
     D = DDP(D, device_ids=[dev], 
@@ -221,6 +226,7 @@ def train(dev, world_size, config, args,
     vgg_per = DDP(vgg_per, device_ids=[dev], 
                   find_unused_parameters=True)
      
+
     # Datasets
     sampler = DistributedSampler(dataset)
     dataloader = DataLoader(dataset, batch_size=args.size_batch, 
@@ -232,6 +238,7 @@ def train(dev, world_size, config, args,
 
     # AMP
     scaler = GradScaler()
+
 
     for epoch in range(epoch_start, args.num_epoch):
         sampler.set_epoch(epoch)
@@ -380,18 +387,25 @@ def main():
             transforms.Resize(256),
             transforms.CenterCrop(256),
             ])
+
+
+
     dataset, dataset_val = prepare_dataset(
             args.path_imgnet_train,
             args.path_imgnet_val,
             args.index_target,
             prep=prep)
 
+
     is_shuffle = True 
     args.size_batch = int(args.size_batch / num_gpu)
     sample_train = extract_sample(dataset, args.size_batch, 
-                                  args.iter_sample, is_shuffle)
+                                  args.iter_sample, is_shuffle,
+                                  pin_memory=False)
     sample_valid = extract_sample(dataset_val, args.size_batch, 
-                                  args.iter_sample, is_shuffle)
+                                  args.iter_sample, is_shuffle,
+                                  pin_memory=False)
+
 
     # Logger
     grid_init = make_grid_multi(sample_train['xs'], nrow=4)
