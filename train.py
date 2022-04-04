@@ -108,7 +108,6 @@ def parse_args():
 
     # EMA
     parser.add_argument('--decay_ema_g', type=float, default=0.999)
-    parser.add_argument('--decay_ema_d', type=float, default=0.999)
 
     # Others
     parser.add_argument('--dim_z', type=int, default=119)
@@ -162,7 +161,6 @@ def train(dev, world_size, config, args,
     D = models.Discriminator(**config)
     D.train()
     if not args.no_pretrained_d:
-        print('Use pretraind D')
         D.load_state_dict(torch.load(args.path_ckpt_d, map_location='cpu'),
                           strict=False)
 
@@ -207,13 +205,10 @@ def train(dev, world_size, config, args,
     utils.optimizer_to(optimizer_g, 'cuda:%d' % dev)
     utils.optimizer_to(optimizer_d, 'cuda:%d' % dev)
 
-
     # EMA
     ema_g = ExponentialMovingAverage(EG.parameters(), decay=args.decay_ema_g)
-    ema_d = ExponentialMovingAverage(D.parameters(), decay=args.decay_ema_d)
     if args.retrain:
-        load_for_retrain_EMA(ema_g, ema_d,
-                             args.retrain_epoch, path_ckpts, 'cpu')
+        load_for_retrain_EMA(ema_g, args.retrain_epoch, path_ckpts, 'cpu')
 
     # DDP
     torch.cuda.set_device(dev)
@@ -225,7 +220,6 @@ def train(dev, world_size, config, args,
             find_unused_parameters=False)
     vgg_per = DDP(vgg_per, device_ids=[dev], 
                   find_unused_parameters=True)
-     
 
     # Datasets
     sampler = DistributedSampler(dataset)
@@ -238,7 +232,6 @@ def train(dev, world_size, config, args,
 
     # AMP
     scaler = GradScaler()
-
 
     for epoch in range(epoch_start, args.num_epoch):
         sampler.set_epoch(epoch)
@@ -282,6 +275,7 @@ def train(dev, world_size, config, args,
                                            c=c,
                                            args=args,
                                            fake=fake)
+
             with autocast():
                 loss, loss_dic = cal_loss_g()
             scaler.scale(loss).backward()
@@ -290,7 +284,6 @@ def train(dev, world_size, config, args,
 
             # EMA
             if is_main_dev:
-                ema_d.update()
                 ema_g.update()
 
             loss_dic['loss_d'] = loss_d
@@ -326,7 +319,6 @@ def train(dev, world_size, config, args,
                           schedule_g=scheduler_g,
                           schedule_d=scheduler_d,
                           ema_g=ema_g,
-                          ema_d=ema_d,
                           num_iter=num_iter,
                           args=args, epoch=epoch, path_ckpts=path_ckpts)
 
