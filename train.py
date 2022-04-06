@@ -257,27 +257,26 @@ def train(dev, world_size, config, args,
                 x_real =  color_enhance(x)
 
             optimizer_d.zero_grad()
-            cal_loss_d = lambda: loss_fn_d(D=D,
-                                           c=c,
-                                           real=x_real,
-                                           fake=fake.detach())
             with autocast():
-                loss_d = cal_loss_d()
+                loss_d = loss_fn_d(D=D,
+                                   c=c,
+                                   real=x_real,
+                                   fake=fake.detach())
+
             scaler.scale(loss_d).backward()
             scaler.step(optimizer_d)
             scaler.update()
 
             # GENERATOR
             optimizer_g.zero_grad()
-            cal_loss_g = lambda: loss_fn_g(D=D,
+            with autocast():
+                loss, loss_dic = loss_fn_g(D=D,
                                            vgg_per=vgg_per,
                                            x=x,
                                            c=c,
                                            args=args,
                                            fake=fake)
 
-            with autocast():
-                loss, loss_dic = cal_loss_g()
             scaler.scale(loss).backward()
             scaler.step(optimizer_g)
             scaler.update()
