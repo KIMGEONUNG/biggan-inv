@@ -97,11 +97,13 @@ def parse_args():
     parser.add_argument('--no_pretrained_d', action='store_true')
 
     # Loss
-    parser.add_argument('--loss_mse', action='store_true', default=True)
-    parser.add_argument('--loss_lpips', action='store_true', default=True)
-    parser.add_argument('--loss_adv', action='store_true', default=True)
+    parser.add_argument('--loss_mse', action='store_true')
+    parser.add_argument('--loss_lpips', action='store_true')
+    parser.add_argument('--loss_adv', action='store_true')
+    parser.add_argument('--loss_zhinge', action='store_true')
     parser.add_argument('--coef_mse', type=float, default=1.0)
     parser.add_argument('--coef_lpips', type=float, default=0.2)
+    parser.add_argument('--coef_zhinge', type=float, default=0.2)
     parser.add_argument('--coef_adv', type=float, default=0.03)
     parser.add_argument('--vgg_target_layers', type=int, nargs='+',
                             default=[1, 2, 13, 20])
@@ -110,7 +112,10 @@ def parse_args():
     parser.add_argument('--decay_ema_g', type=float, default=0.999)
 
     # Others
+    parser.add_argument('--num_copy', type=int, default=4)
     parser.add_argument('--dim_z', type=int, default=119)
+    parser.add_argument('--std_z', type=float, default=0.8)
+    parser.add_argument('--mu_z', type=float, default=1.0)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--size_batch', type=int, default=60)
     parser.add_argument('--port', type=str, default='12355')
@@ -241,20 +246,26 @@ def train(dev, world_size, config, args,
             EG.train()
 
             x, c = x.to(dev), c.to(dev)
-            x_gray = transforms.Grayscale()(x)
+
+            # Duplicate
+            x = x.repeat_interleave(args.num_copy, dim=0)
+            c = c.repeat_interleave(args.num_copy, dim=0)
 
             # Sample z
-            z = torch.zeros((args.size_batch, args.dim_z)).to(dev)
-            z.normal_(mean=0, std=0.8)
+            z = torch.zeros((args.size_batch * args.num_copy,
+                                args.dim_z)).to(dev)
+            z.normal_(mean=args.mu_z, std=args.std_z)
+
+            x_gray = transforms.Grayscale()(x)
 
             # Generate fake image
             with autocast():
                 fake = EG(x_gray, c, z)
-
+                fake = fake * torch.ones_like(x_gray)
             # DISCRIMINATOR 
             x_real = x
             if args.use_enhance:
-                x_real =  color_enhance(x)
+                x_real = color_enhance(x)
 
             optimizer_d.zero_grad()
             with autocast():
@@ -271,9 +282,9 @@ def train(dev, world_size, config, args,
             optimizer_g.zero_grad()
             with autocast():
                 loss, loss_dic = loss_fn_g(D=D,
-                                           vgg_per=vgg_per,
                                            x=x,
                                            c=c,
+                                           vgg_per=vgg_per,
                                            args=args,
                                            fake=fake)
 
