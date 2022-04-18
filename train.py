@@ -12,6 +12,7 @@ from torch.utils.data.distributed import DistributedSampler
 import pickle
 import argparse
 import torchvision.transforms as transforms
+from torchvision.utils import make_grid
 from torchvision.transforms import ToTensor
 from tqdm import tqdm
 
@@ -56,10 +57,10 @@ def parse_args():
     parser.add_argument('--path_imgnet_train', default='./imgnet/train')
     parser.add_argument('--path_imgnet_val', default='./imgnet/val')
 
+    # Datasets
     parser.add_argument('--index_target', type=int, nargs='+', 
             default=list(range(1000)))
     parser.add_argument('--num_worker', type=int, default=8)
-    parser.add_argument('--iter_sample', type=int, default=3)
 
     # Encoder Traning
     parser.add_argument('--retrain', action='store_true')
@@ -69,13 +70,17 @@ def parse_args():
     parser.add_argument('--dim_f', type=int, default=16)
     parser.add_argument('--no_res', action='store_true')
     parser.add_argument('--no_cond_e', action='store_true')
-    parser.add_argument('--interval_save_loss', default=20)
-    parser.add_argument('--interval_save_train', default=150)
-    parser.add_argument('--interval_save_test', default=2000)
-    parser.add_argument('--interval_save_ckpt', default=4000)
 
     parser.add_argument('--finetune_g', default=True)
     parser.add_argument('--finetune_d', default=True)
+
+    # Logger
+    parser.add_argument('--interval_save_loss', type=int, default=20)
+    parser.add_argument('--interval_save_train', type=int, default=150)
+    parser.add_argument('--interval_save_test', type=int, default=2000)
+    parser.add_argument('--interval_save_ckpt', type=int, default=4000)
+    parser.add_argument('--num_test_sample', type=int, default=16)
+    parser.add_argument('--num_row_grid', type=int, default=4)
 
     # Optimizer
     parser.add_argument("--lr", type=float, default=0.0001)
@@ -122,6 +127,8 @@ def parse_args():
     parser.add_argument('--use_enhance', action='store_true')
     parser.add_argument('--coef_enhance', type=float, default=1.5)
     parser.add_argument('--use_attention', action='store_true')
+
+    parser.add_argument('--no_save', action='store_true')
 
     # GPU
     parser.add_argument('--multi_gpu', default=True)
@@ -321,7 +328,7 @@ def train(dev, world_size, config, args,
             num_iter += 1
 
         # Save Model
-        if is_main_dev:
+        if is_main_dev and not args.no_save:
             make_log_ckpt(EG=EG.module,
                           D=D.module,
                           optim_g=optimizer_g,
@@ -391,7 +398,6 @@ def main():
             ])
 
 
-
     dataset, dataset_val = prepare_dataset(
             args.path_imgnet_train,
             args.path_imgnet_val,
@@ -401,18 +407,15 @@ def main():
 
     is_shuffle = True 
     args.size_batch = int(args.size_batch / num_gpu)
-    sample_train = extract_sample(dataset, args.size_batch, 
-                                  args.iter_sample, is_shuffle,
-                                  pin_memory=False)
-    sample_valid = extract_sample(dataset_val, args.size_batch, 
-                                  args.iter_sample, is_shuffle,
-                                  pin_memory=False)
-
+    sample_train = extract_sample(dataset, args.num_test_sample,
+                                    is_shuffle, pin_memory=False)
+    sample_valid = extract_sample(dataset_val, args.num_test_sample,
+                                    is_shuffle, pin_memory=False)
 
     # Logger
-    grid_init = make_grid_multi(sample_train['xs'], nrow=4)
+    grid_init = make_grid(sample_train['xs'], nrow=args.num_row_grid)
     writer.add_image('GT_train', grid_init)
-    grid_init = make_grid_multi(sample_valid['xs'], nrow=4)
+    grid_init = make_grid(sample_valid['xs'], nrow=args.num_row_grid)
     writer.add_image('GT_valid', grid_init)
     writer.flush()
     writer.close()

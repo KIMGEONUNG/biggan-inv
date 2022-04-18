@@ -90,19 +90,15 @@ def prepare_dataset(
     return dataset, dataset_val
 
 
-def extract_sample(dataset, size_batch, num_iter, is_shuffle, pin_memory=True):
-    dataloader = DataLoader(dataset, batch_size=size_batch,
+def extract_sample(dataset, num_sample, is_shuffle, pin_memory=True):
+    dataloader = DataLoader(dataset, batch_size=num_sample,
             shuffle=is_shuffle, num_workers=4, pin_memory=pin_memory,
             drop_last=True)
-    xs = []
-    xgs = []
-    cs = []
-    for i, (x, c) in enumerate(dataloader):
-        if i >= num_iter:
-            break
-        xg = transforms.Grayscale()(x)
-        xs.append(x), cs.append(c), xgs.append(xg)
-    return {'xs': xs, 'cs': cs, 'xs_gray': xgs}
+
+    x, c = next(iter(dataloader))
+    x_g = transforms.Grayscale()(x)
+
+    return {'xs': x, 'cs': c, 'x_gs': x_g}
 
 
 def lab_fusion(x_l, x_ab):

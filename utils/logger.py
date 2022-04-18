@@ -84,26 +84,35 @@ def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name,
         ema=None):
     outputs_rgb = []
     outputs_fusion = []
+    batch_size = args.size_batch * args.num_copy
+
+    xs: torch.Tensor = sample['xs']
+    cs: torch.Tensor = sample['cs']
+    x_gs: torch.Tensor = sample['x_gs']
+
+    xs = xs.repeat_interleave(args.num_copy, dim=0)
+    cs = cs.repeat_interleave(args.num_copy, dim=0)
+    x_gs = x_gs.repeat_interleave(args.num_copy, dim=0)
+    zs = torch.zeros((xs.shape[0], dim_z))
     
     EG.eval()
-    for id_sample in range(len(sample['xs'])):
-        z = torch.zeros((args.size_batch, dim_z))
-        z.normal_(mean=0, std=0.8)
-        x_gt = sample['xs'][id_sample]
 
-        x = sample['xs_gray'][id_sample]
-        c = sample['cs'][id_sample]
-        z, x, c = z.to(dev), x.to(dev), c.to(dev)
+    for i in range(len(xs) // batch_size):
+        z = zs[batch_size * i: batch_size * (i + 1), ...]
+        x = xs[batch_size * i: batch_size * (i + 1), ...]
+        c = cs[batch_size * i: batch_size * (i + 1), ...]
+        x_g = x_gs[batch_size * i: batch_size * (i + 1), ...]
+        z, c, x_g = z.to(dev), c.to(dev), x_g.to(dev)
 
         with torch.no_grad():
-            with autocast():
-                if ema is None:
-                    output = EG(x, c, z)
-                else:
-                    with ema.average_parameters():
-                        output = EG(x, c, z)
+            if ema is None:
+                output = EG(x_g, c, z)
+            else:
+                with ema.average_parameters():
+                    output = EG(x_g, c, z)
             output = output.add(1).div(2).detach().cpu()
-        output_fusion = lab_fusion(x_gt, output)
+
+        output_fusion = lab_fusion(x, output)
         outputs_rgb.append(output)
         outputs_fusion.append(output_fusion)
 
