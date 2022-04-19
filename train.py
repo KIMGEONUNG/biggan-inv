@@ -74,6 +74,8 @@ def parse_args():
     parser.add_argument('--finetune_g', default=True)
     parser.add_argument('--finetune_d', default=True)
 
+    parser.add_argument('--unaligned_sample', action='store_true')
+
     # Logger
     parser.add_argument('--interval_save_loss', type=int, default=20)
     parser.add_argument('--interval_save_train', type=int, default=150)
@@ -245,6 +247,15 @@ def train(dev, world_size, config, args,
             sampler=sampler, pin_memory=True,
             num_workers=args.num_worker, drop_last=True)
 
+    if args.unaligned_sample:
+        sampler_d = DistributedSampler(dataset, seed=77)
+        dataloader_d = DataLoader(dataset, batch_size=args.size_batch, 
+                shuffle=True if sampler_d is None else False, 
+                sampler=sampler_d, pin_memory=True,
+                num_workers=args.num_worker, drop_last=True)
+        dataloader_d_iterator = iter(dataloader_d)
+
+
     color_enhance = partial(color_enhacne_blend, factor=args.coef_enhance)
 
     # AMP
@@ -253,6 +264,9 @@ def train(dev, world_size, config, args,
     loss_dict = {}
     for epoch in range(epoch_start, args.num_epoch):
         sampler.set_epoch(epoch)
+        if args.unaligned_sample:
+            sampler_d.set_epoch(epoch)
+
         tbar = tqdm(dataloader)
         tbar.set_description('epoch: %03d' % epoch)
         for i, (x, c) in enumerate(tbar):
@@ -261,8 +275,9 @@ def train(dev, world_size, config, args,
             x, c = x.to(dev), c.to(dev)
 
             # Duplicate
-            x = x.repeat_interleave(args.num_copy, dim=0)
-            c = c.repeat_interleave(args.num_copy, dim=0)
+            if args.num_copy != 1:
+                x = x.repeat_interleave(args.num_copy, dim=0)
+                c = c.repeat_interleave(args.num_copy, dim=0)
 
             # Sample z
             z = torch.zeros((args.size_batch * args.num_copy,
@@ -276,19 +291,23 @@ def train(dev, world_size, config, args,
                 fake = EG(x_gray, c, z)
 
             # DISCRIMINATOR 
-            x_real = x
+            if args.unaligned_sample:
+                x_real, c_real = next(dataloader_d_iterator)
+                x_real, c_real = x_real.to(dev), c_real.to(dev)
+            else:
+                x_real = x
+                c_real = c
+
             if args.use_enhance:
                 x_real = color_enhance(x)
 
             optimizer_d.zero_grad()
-
             with autocast():
                 loss_d = loss_fn_d(D=D,
-                                   c=c,
+                                   c=c_real,
                                    real=x_real,
                                    fake=fake.detach(),
                                    loss_dict=loss_dict)
-
             scaler.scale(loss_d).backward()
             scaler.step(optimizer_d)
             scaler.update()
