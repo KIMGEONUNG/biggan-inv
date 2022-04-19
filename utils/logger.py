@@ -136,16 +136,16 @@ def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name,
     if 'color_scatter_score' in args.eval_targets:
         num_sample = args.num_copy_test
         mse = nn.MSELoss()
-        feats = RGBuvHistBlock(device='cpu')(outputs_rgb)
-
-        score = 0 
-        num_cal = 0
-        for feat in feats.split(num_sample):
-            for i in range(num_sample - 1):
-                for j in range(i, num_sample):
-                    score += mse(feats[i], feats[j])
-                    num_cal += 1
-        score /= num_cal
+        with torch.no_grad():
+            feats = RGBuvHistBlock(device=dev)(outputs_rgb.to(dev)).to(dev)
+            score = 0 
+            num_cal = 0
+            for feat in feats.split(num_sample):
+                for i in range(num_sample - 1):
+                    for j in range(i, num_sample):
+                        score += mse(feats[i], feats[j])
+                        num_cal += 1
+            score /= num_cal
         writer.add_scalar('color_scatter_score', score, num_iter)
 
     writer.flush()

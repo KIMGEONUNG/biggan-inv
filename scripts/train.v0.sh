@@ -20,7 +20,7 @@ CUDA_VISIBLE_DEVICES=$GPUS python -W ignore train.py \
                     --interval_save_train 10 \
                     --interval_save_test 10 \
                     --coef_wip 0.02 \
-                    --num_test_sample 20 \
+                    --num_test_sample 8 \
                     --num_copy $NUM_COPY \
                     --index_target $INDEX_TARGET \
                     --num_epoch $NUM_EPOCH \
