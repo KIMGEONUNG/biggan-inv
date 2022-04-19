@@ -1,5 +1,0 @@
-#!/bin/bash
-
-EPOCH=11
-NAME_TASK=fix_lpips
-PATH_CKPT=ckpts/$NAME_TASK

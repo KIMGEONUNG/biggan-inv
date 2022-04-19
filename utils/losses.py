@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from utils import rgb2lab
 from torchvision.transforms import Resize
+from representation import RGBuvHistBlock
 
 
 def enroll_loss(name, loss, loss_dict):
@@ -17,38 +18,53 @@ def loss_fn_d(D, c, real, fake, loss_dict):
     d_loss_real, d_loss_fake = loss_hinge_dis(critic_fake, critic_real)
     loss_d = (d_loss_real + d_loss_fake) / 2  
     
-    # loss_dict['adv_d'] = loss_d.item()
     enroll_loss('adv_d', loss_d.item(), loss_dict)
 
     return loss_d
 
 
-def loss_fn_g(D, x, c, args, fake, vgg_per, loss_dict):
+def loss_fn_g(D, x, c, args, fake, vgg_per, loss_dict, dev=None):
     loss = 0
     if 'adv' in args.loss_targets:
         critic, _ = D(fake, c)
         loss_g = loss_hinge_gen(critic) * args.coef_adv
         loss += loss_g 
-        # loss_dict['adv_g'] = loss_g.item()
         enroll_loss('adv_g', loss_g.item(), loss_dict)
 
     fake_ranged = fake.add(1).div(2)
     if 'mse' in args.loss_targets:
         loss_mse = args.coef_mse * nn.MSELoss()(x, fake_ranged)
         loss += loss_mse
-        # loss_dict['mse'] = loss_mse.item()
         enroll_loss('mse', loss_mse.item(), loss_dict)
+
     if 'vgg_per' in args.loss_targets:
         loss_vgg_per = args.coef_vgg_per * vgg_per(x, fake_ranged)
         loss += loss_vgg_per
-        # loss_dict['vgg_per'] = loss_vgg_per.item()
         enroll_loss('vgg_per', loss_vgg_per.item(), loss_dict)
+
     if 'zhinge' in args.loss_targets:
+        raise NotImplementedError()
         loss_fn = color_histogram_loss()
         loss_zhinge = args.coef_zhinge * loss_fn(fake_ranged, args.num_copy)
         loss += loss_zhinge
-        # loss_dict['zhinge'] = loss_zhinge.item()
         enroll_loss('zhinge', loss_zhinge.item(), loss_dict)
+
+    if 'wip' in args.loss_targets:
+        num_sample = fake_ranged.shape[0]
+        feats = RGBuvHistBlock(device=dev)(fake_ranged)
+        mse = nn.MSELoss()
+
+        num_cal = 0
+        loss_sum =0 
+        for i in range(num_sample - 1):
+            for j in range(i, num_sample):
+                loss_sum = mse(feats[i], feats[j])
+                num_cal += 1
+        loss_sum /= num_cal
+
+        loss_wip = args.coef_wip * -loss_sum
+        loss += loss_wip
+        enroll_loss('wip', loss_wip.item(), loss_dict)
 
     return loss
 
@@ -64,6 +80,7 @@ class JSD(nn.Module):
              + F.kl_div(prop_2, m, reduce=True)
 
         return (0.5 * loss)
+
 
 class color_histogram_loss(nn.Module):
 

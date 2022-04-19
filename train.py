@@ -103,12 +103,14 @@ def parse_args():
 
     # Loss
     parser.add_argument('--loss_targets', type=str, nargs='+', required=True,
-                        choices=['mse', 'vgg_per', 'adv', 'zhinge'])
+                        choices=['mse', 'vgg_per', 'adv', 'zhinge',
+                                 'wip'])
 
     parser.add_argument('--coef_mse', type=float, default=1.0)
     parser.add_argument('--coef_vgg_per', type=float, default=0.2)
     parser.add_argument('--coef_zhinge', type=float, default=0.2)
     parser.add_argument('--coef_adv', type=float, default=0.03)
+    parser.add_argument('--coef_wip', type=float, default=0.02)
     parser.add_argument('--vgg_target_layers', type=int, nargs='+',
                             default=[1, 2, 13, 20])
 
@@ -296,7 +298,8 @@ def train(dev, world_size, config, args,
                                  vgg_per=vgg_per,
                                  args=args,
                                  fake=fake,
-                                 loss_dict=loss_dict)
+                                 loss_dict=loss_dict,
+                                 dev=dev)
 
             scaler.scale(loss).backward()
             scaler.step(optimizer_g)
