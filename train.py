@@ -106,6 +106,9 @@ def parse_args():
                         choices=['mse', 'vgg_per', 'adv', 'zhinge',
                                  'wip'])
 
+    parser.add_argument('--eval_targets', type=str, nargs='+', required=True,
+                        choices=['color_scatter_score'])
+
     parser.add_argument('--coef_mse', type=float, default=1.0)
     parser.add_argument('--coef_vgg_per', type=float, default=0.2)
     parser.add_argument('--coef_zhinge', type=float, default=0.2)
@@ -119,6 +122,7 @@ def parse_args():
 
     # Others
     parser.add_argument('--num_copy', type=int, default=4)
+    parser.add_argument('--num_copy_test', type=int, default=4)
     parser.add_argument('--dim_z', type=int, default=119)
     parser.add_argument('--std_z', type=float, default=0.8)
     parser.add_argument('--mu_z', type=float, default=1.0)

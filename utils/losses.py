@@ -58,7 +58,7 @@ def loss_fn_g(D, x, c, args, fake, vgg_per, loss_dict, dev=None):
         loss_sum =0 
         for i in range(num_sample - 1):
             for j in range(i, num_sample):
-                loss_sum = mse(feats[i], feats[j])
+                loss_sum += mse(feats[i], feats[j])
                 num_cal += 1
         loss_sum /= num_cal
 

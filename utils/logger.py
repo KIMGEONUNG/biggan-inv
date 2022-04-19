@@ -1,8 +1,11 @@
 import torch
+import torch.nn as nn
 from os.path import join
 from .common_utils import lab_fusion, make_grid_multi
 from torch.cuda.amp import autocast
 from statistics import mean
+from torchvision.utils import make_grid
+from representation import RGBuvHistBlock
 
 
 def make_log_ckpt(EG, D,
@@ -92,9 +95,9 @@ def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name,
     cs: torch.Tensor = sample['cs']
     x_gs: torch.Tensor = sample['x_gs']
 
-    xs = xs.repeat_interleave(args.num_copy, dim=0)
-    cs = cs.repeat_interleave(args.num_copy, dim=0)
-    x_gs = x_gs.repeat_interleave(args.num_copy, dim=0)
+    xs = xs.repeat_interleave(args.num_copy_test, dim=0)
+    cs = cs.repeat_interleave(args.num_copy_test, dim=0)
+    x_gs = x_gs.repeat_interleave(args.num_copy_test, dim=0)
     zs = torch.zeros((xs.shape[0], dim_z))
     zs.normal_(mean=args.mu_z, std=args.std_z)
     
@@ -116,15 +119,33 @@ def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name,
             output = output.add(1).div(2).detach().cpu()
 
         output_fusion = lab_fusion(x, output)
+
         outputs_rgb.append(output)
         outputs_fusion.append(output_fusion)
 
-    grid = make_grid_multi(outputs_rgb, nrow=4)
+    outputs_rgb = torch.cat(outputs_rgb, dim=0)
+    outputs_fusion = torch.cat(outputs_fusion, dim=0)
+
+    grid = make_grid(outputs_rgb, nrow=4)
     writer.add_image('recon_%s_rgb' % name, 
             grid, num_iter)
-
-    grid = make_grid_multi(outputs_fusion, nrow=4)
+    grid = make_grid(outputs_fusion, nrow=4)
     writer.add_image('recon_%s_fusion' % name, 
             grid, num_iter)
+
+    if 'color_scatter_score' in args.eval_targets:
+        num_sample = args.num_copy_test
+        mse = nn.MSELoss()
+        feats = RGBuvHistBlock(device='cpu')(outputs_rgb)
+
+        score = 0 
+        num_cal = 0
+        for feat in feats.split(num_sample):
+            for i in range(num_sample - 1):
+                for j in range(i, num_sample):
+                    score += mse(feats[i], feats[j])
+                    num_cal += 1
+        score /= num_cal
+        writer.add_scalar('color_scatter_score', score, num_iter)
 
     writer.flush()

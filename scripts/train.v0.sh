@@ -14,6 +14,7 @@ CUDA_VISIBLE_DEVICES=$GPUS python -W ignore train.py \
                     --vgg_target_layers 1 2 13 20 \
                     --no_save \
                     --loss_targets $LOSS_TARGETS \
+                    --eval_targets 'color_scatter_score' \
                     --size_batch $SIZE_BATCH \
                     --interval_save_loss 10 \
                     --interval_save_train 10 \
