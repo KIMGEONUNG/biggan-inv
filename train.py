@@ -253,7 +253,6 @@ def train(dev, world_size, config, args,
                 shuffle=True if sampler_d is None else False, 
                 sampler=sampler_d, pin_memory=True,
                 num_workers=args.num_worker, drop_last=True)
-        dataloader_d_iterator = iter(dataloader_d)
 
 
     color_enhance = partial(color_enhacne_blend, factor=args.coef_enhance)
@@ -266,6 +265,7 @@ def train(dev, world_size, config, args,
         sampler.set_epoch(epoch)
         if args.unaligned_sample:
             sampler_d.set_epoch(epoch)
+            dataloader_d_iterator = iter(dataloader_d)
 
         tbar = tqdm(dataloader)
         tbar.set_description('epoch: %03d' % epoch)
