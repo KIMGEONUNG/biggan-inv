@@ -2,6 +2,7 @@ import torch
 from os.path import join
 from .common_utils import lab_fusion, make_grid_multi
 from torch.cuda.amp import autocast
+from statistics import mean
 
 
 def make_log_ckpt(EG, D,
@@ -68,16 +69,17 @@ def load_for_retrain_EMA(ema_g, epoch, path_ckpts, dev):
     ema_g.load_state_dict(state)
 
 
-def make_log_scalar(writer, num_iter, loss_dic: dict):
-    loss_g = loss_dic['loss_g']
-    loss_d = loss_dic['loss_d']
-    writer.add_scalars('GAN loss', 
-        {'G': loss_g.item(), 'D': loss_d.item()}, num_iter)
+def make_log_scalar(writer, num_iter, loss_dict: dict, num_sample):
+    loss_g = mean(loss_dict['adv_g'])
+    loss_d = mean(loss_dict['adv_d'])
+    writer.add_scalars('GAN', 
+        {'adv_g': loss_g, 'adv_d': loss_d}, num_iter)
 
-    del loss_dic['loss_g']
-    del loss_dic['loss_d']
-    for key, value in loss_dic.items():
-        writer.add_scalar(key, value.item(), num_iter)
+    del loss_dict['adv_g']
+    del loss_dict['adv_d']
+    for key, value in loss_dict.items():
+        writer.add_scalar(key, mean(value), num_iter)
+    loss_dict.clear()
 
 
 def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name,
@@ -94,6 +96,7 @@ def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name,
     cs = cs.repeat_interleave(args.num_copy, dim=0)
     x_gs = x_gs.repeat_interleave(args.num_copy, dim=0)
     zs = torch.zeros((xs.shape[0], dim_z))
+    zs.normal_(mean=args.mu_z, std=args.std_z)
     
     EG.eval()
 

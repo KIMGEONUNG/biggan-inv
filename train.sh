@@ -4,14 +4,13 @@ source config.system.sh
 
 INDEX_TARGET="42 88 93 96 110"
 INDEX_TARGET="88" # Macaw
-NUM_EPOCH=5
+LOSS_TARGETS="mse vgg_per adv"
+NUM_EPOCH=20
 
 CUDA_VISIBLE_DEVICES=$GPUS python -W ignore train.py \
                     --vgg_target_layers 1 2 13 20 \
                     --no_save \
-                    --loss_mse \
-                    --loss_lpips \
-                    --loss_adv \
+                    --loss_targets $LOSS_TARGETS \
                     --size_batch $SIZE_BATCH \
                     --interval_save_loss 10 \
                     --interval_save_train 10 \

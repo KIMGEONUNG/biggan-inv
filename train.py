@@ -102,12 +102,11 @@ def parse_args():
     parser.add_argument('--no_pretrained_d', action='store_true')
 
     # Loss
-    parser.add_argument('--loss_mse', action='store_true')
-    parser.add_argument('--loss_lpips', action='store_true')
-    parser.add_argument('--loss_adv', action='store_true')
-    parser.add_argument('--loss_zhinge', action='store_true')
+    parser.add_argument('--loss_targets', type=str, nargs='+', required=True,
+                        choices=['mse', 'vgg_per', 'adv', 'zhinge'])
+
     parser.add_argument('--coef_mse', type=float, default=1.0)
-    parser.add_argument('--coef_lpips', type=float, default=0.2)
+    parser.add_argument('--coef_vgg_per', type=float, default=0.2)
     parser.add_argument('--coef_zhinge', type=float, default=0.2)
     parser.add_argument('--coef_adv', type=float, default=0.03)
     parser.add_argument('--vgg_target_layers', type=int, nargs='+',
@@ -245,6 +244,7 @@ def train(dev, world_size, config, args,
     # AMP
     scaler = GradScaler()
 
+    loss_dict = {}
     for epoch in range(epoch_start, args.num_epoch):
         sampler.set_epoch(epoch)
         tbar = tqdm(dataloader)
@@ -268,18 +268,20 @@ def train(dev, world_size, config, args,
             # Generate fake image
             with autocast():
                 fake = EG(x_gray, c, z)
-                fake = fake * torch.ones_like(x_gray)
+
             # DISCRIMINATOR 
             x_real = x
             if args.use_enhance:
                 x_real = color_enhance(x)
 
             optimizer_d.zero_grad()
+
             with autocast():
                 loss_d = loss_fn_d(D=D,
                                    c=c,
                                    real=x_real,
-                                   fake=fake.detach())
+                                   fake=fake.detach(),
+                                   loss_dict=loss_dict)
 
             scaler.scale(loss_d).backward()
             scaler.step(optimizer_d)
@@ -288,12 +290,13 @@ def train(dev, world_size, config, args,
             # GENERATOR
             optimizer_g.zero_grad()
             with autocast():
-                loss, loss_dic = loss_fn_g(D=D,
-                                           x=x,
-                                           c=c,
-                                           vgg_per=vgg_per,
-                                           args=args,
-                                           fake=fake)
+                loss = loss_fn_g(D=D,
+                                 x=x,
+                                 c=c,
+                                 vgg_per=vgg_per,
+                                 args=args,
+                                 fake=fake,
+                                 loss_dict=loss_dict)
 
             scaler.scale(loss).backward()
             scaler.step(optimizer_g)
@@ -303,11 +306,12 @@ def train(dev, world_size, config, args,
             if is_main_dev:
                 ema_g.update()
 
-            loss_dic['loss_d'] = loss_d
-
             # Logger
             if num_iter % args.interval_save_loss == 0 and is_main_dev:
-                make_log_scalar(writer, num_iter, loss_dic)
+                make_log_scalar(writer, num_iter, loss_dict, args.interval_save_loss)
+
+            if num_iter % args.interval_save_loss == 0:
+                loss_dict = {}
 
             if num_iter % args.interval_save_train == 0 and is_main_dev:
                 make_log_img(EG, args.dim_z, writer, args, sample_train,

@@ -5,40 +5,52 @@ from utils import rgb2lab
 from torchvision.transforms import Resize
 
 
-def loss_fn_d(D, c, real, fake):
+def enroll_loss(name, loss, loss_dict):
+    keys = loss_dict.keys()
+    loss_dict[name] = [loss] if name not in keys else loss_dict[name] + [loss]
+
+
+def loss_fn_d(D, c, real, fake, loss_dict):
     real = (real - 0.5) * 2
     critic_real, _ = D(real, c)
     critic_fake, _ = D(fake, c)
     d_loss_real, d_loss_fake = loss_hinge_dis(critic_fake, critic_real)
     loss_d = (d_loss_real + d_loss_fake) / 2  
+    
+    # loss_dict['adv_d'] = loss_d.item()
+    enroll_loss('adv_d', loss_d.item(), loss_dict)
+
     return loss_d
 
 
-def loss_fn_g(D, x, c, args, fake, vgg_per):
-    loss_dic = {}
+def loss_fn_g(D, x, c, args, fake, vgg_per, loss_dict):
     loss = 0
-    if args.loss_adv:
+    if 'adv' in args.loss_targets:
         critic, _ = D(fake, c)
         loss_g = loss_hinge_gen(critic) * args.coef_adv
         loss += loss_g 
-        loss_dic['loss_g'] = loss_g 
+        # loss_dict['adv_g'] = loss_g.item()
+        enroll_loss('adv_g', loss_g.item(), loss_dict)
 
     fake_ranged = fake.add(1).div(2)
-    if args.loss_mse:
+    if 'mse' in args.loss_targets:
         loss_mse = args.coef_mse * nn.MSELoss()(x, fake_ranged)
         loss += loss_mse
-        loss_dic['mse'] = loss_mse
-    if args.loss_lpips:
-        loss_lpips = args.coef_lpips * vgg_per(x, fake_ranged)
-        loss += loss_lpips
-        loss_dic['lpips'] = loss_lpips
-    if args.loss_zhinge:
+        # loss_dict['mse'] = loss_mse.item()
+        enroll_loss('mse', loss_mse.item(), loss_dict)
+    if 'vgg_per' in args.loss_targets:
+        loss_vgg_per = args.coef_vgg_per * vgg_per(x, fake_ranged)
+        loss += loss_vgg_per
+        # loss_dict['vgg_per'] = loss_vgg_per.item()
+        enroll_loss('vgg_per', loss_vgg_per.item(), loss_dict)
+    if 'zhinge' in args.loss_targets:
         loss_fn = color_histogram_loss()
         loss_zhinge = args.coef_zhinge * loss_fn(fake_ranged, args.num_copy)
         loss += loss_zhinge
-        loss_dic['zhinge'] = loss_zhinge
+        # loss_dict['zhinge'] = loss_zhinge.item()
+        enroll_loss('zhinge', loss_zhinge.item(), loss_dict)
 
-    return loss, loss_dic
+    return loss
 
 
 class JSD(nn.Module):
