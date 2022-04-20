@@ -2,13 +2,67 @@ import torch
 import torch.nn as nn
 
 from typing import List, Callable
-from random import random
 from hashlib import sha256
 from os.path import join
 
-from models import ResConvBlock
+from models import (ResConvBlock, EncoderF_Res)
+from global_config import LEN_HASH
 
 import inspect
+import argparse
+
+def parse():
+    p = argparse.ArgumentParser()
+    p.add_argument('targets', type=str, nargs='+')
+
+    return p.parse_args()
+
+
+
+def v001():
+    name = globals()[inspect.getframeinfo(inspect.currentframe()).function].__name__
+    print(name, 'started')
+    id_code = sha256(name.encode('utf-8')).hexdigest()[:LEN_HASH]
+
+    model = ResConvBlock(6, 10, is_down=True)
+    model.eval()
+    saver(inputs=[torch.randn(4, 6, 256, 256)],
+          model=model,
+          in_map_fn=lambda m, x: m(x[0]),
+          out_map_fn=lambda x: [x],
+          id_code=id_code,
+          )
+    
+
+def v002():
+    name = globals()[inspect.getframeinfo(inspect.currentframe()).function].__name__
+    print(name, 'started')
+    id_code = sha256(name.encode('utf-8')).hexdigest()[:LEN_HASH]
+
+    model = ResConvBlock(6, 10, is_down=True, use_res=False)
+    model.eval()
+    saver(inputs=[torch.randn(4, 6, 256, 256)],
+          model=model,
+          in_map_fn=lambda m, x: m(x[0]),
+          out_map_fn=lambda x: [x],
+          id_code=id_code,
+          )
+
+
+def v003():
+    name = globals()[inspect.getframeinfo(inspect.currentframe()).function].__name__
+    print(name, 'started')
+    id_code = sha256(name.encode('utf-8')).hexdigest()[:LEN_HASH]
+
+    model = EncoderF_Res()
+    model.eval()
+
+    saver(inputs=[torch.randn(4, 1, 256, 256)],
+          model=model,
+          in_map_fn=lambda m, x: m(x[0]),
+          out_map_fn=lambda x: [x],
+          id_code=id_code,
+          )
 
 
 def saver(inputs: List[torch.Tensor],
@@ -38,36 +92,11 @@ def saver(inputs: List[torch.Tensor],
         torch.save(output, path)
 
 
-def v001():
-    name = globals()[inspect.getframeinfo(inspect.currentframe()).function].__name__
-    id_code = sha256(name.encode('utf-8')).hexdigest()[:10]
-
-    model = ResConvBlock(6, 10, is_down=True)
-    model.eval()
-    saver(inputs=[torch.randn(4, 6, 256, 256)],
-          model=model,
-          in_map_fn=lambda m, x: m(x[0]),
-          out_map_fn=lambda x: [x],
-          id_code=id_code,
-          )
-    
-def v002():
-    name = globals()[inspect.getframeinfo(inspect.currentframe()).function].__name__
-    id_code = sha256(name.encode('utf-8')).hexdigest()[:10]
-
-    model = ResConvBlock(6, 10, is_down=True, use_res=False)
-    model.eval()
-    saver(inputs=[torch.randn(4, 6, 256, 256)],
-          model=model,
-          in_map_fn=lambda m, x: m(x[0]),
-          out_map_fn=lambda x: [x],
-          id_code=id_code,
-          )
-
-
 def main():
-    v001()
-    v002()
+    args = parse()
+
+    for target in args.targets:
+        globals()[target]()
 
 
 if __name__ == '__main__':
