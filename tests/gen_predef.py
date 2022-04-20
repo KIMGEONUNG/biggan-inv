@@ -65,6 +65,22 @@ def v003():
           )
 
 
+def v004():
+    name = globals()[inspect.getframeinfo(inspect.currentframe()).function].__name__
+    print(name, 'started')
+    id_code = sha256(name.encode('utf-8')).hexdigest()[:LEN_HASH]
+
+    model = EncoderF_Res(norm='adabatch')
+    model.eval()
+
+    saver(inputs=[torch.randn(4, 1, 256, 256), torch.randn(4, 128)],
+          model=model,
+          in_map_fn=lambda m, x: m(x[0],x[1]),
+          out_map_fn=lambda x: [x],
+          id_code=id_code,
+          )
+
+
 def saver(inputs: List[torch.Tensor],
           model: nn.Module,
           in_map_fn: Callable,

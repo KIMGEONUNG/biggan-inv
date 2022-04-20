@@ -15,8 +15,6 @@ class Tester(TestCase):
     def test_ResBlock_1(self):
         # bc432d47ed
         id_code = sha256('v001'.encode('utf-8')).hexdigest()[:LEN_HASH]
-
-        join(PATH_STORAGE, '%s_input_0') % id_code
         
         x = torch.load(join(PATH_STORAGE, '%s_input_0') % id_code)
         output = torch.load(join(PATH_STORAGE, '%s_output_0') % id_code)
