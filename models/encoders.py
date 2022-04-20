@@ -173,11 +173,13 @@ class EncoderF_Res(nn.Module):
                  ch_in=1,
                  ch_out=768,
                  ch_unit=96,
+                 ch_c=128,
                  norm='batch',
                  activation='relu',
                  init='ortho',
                  use_att=False,
-                 use_res=True
+                 use_res=True,
+                 dropout=[0.2, 0.2, 0.2, 0.2, None]
                  ):
         super().__init__()
 
@@ -205,6 +207,8 @@ class EncoderF_Res(nn.Module):
                                  activation=activation,
                                  norm=norm,
                                  use_res=use_res,
+                                 dropout=dropout[0],
+                                 ch_c=ch_c,
                                  **kwargs)
         # output is 192 x 128 x 128 
         self.res2 = ResConvBlock(ch_unit * 1, ch_unit * 2,
@@ -212,6 +216,8 @@ class EncoderF_Res(nn.Module):
                                  activation=activation,
                                  norm=norm,
                                  use_res=use_res,
+                                 dropout=dropout[1],
+                                 ch_c=ch_c,
                                  **kwargs)
         # output is  384 x 64 x 64 
         self.res3 = ResConvBlock(ch_unit * 2, ch_unit * 4,
@@ -219,6 +225,8 @@ class EncoderF_Res(nn.Module):
                                  activation=activation,
                                  norm=norm,
                                  use_res=use_res,
+                                 dropout=dropout[2],
+                                 ch_c=ch_c,
                                  **kwargs)
         # output is  768 x 32 x 32 
         self.res4 = ResConvBlock(ch_unit * 4, ch_unit * 8,
@@ -226,6 +234,8 @@ class EncoderF_Res(nn.Module):
                                  activation=activation,
                                  norm=norm,
                                  use_res=use_res,
+                                 dropout=dropout[3],
+                                 ch_c=ch_c,
                                  **kwargs)
         # output is  768 x 16 x 16 
         self.res5 = ResConvBlock(ch_unit * 8, ch_unit * 8,
@@ -233,7 +243,8 @@ class EncoderF_Res(nn.Module):
                                  activation=activation,
                                  norm=norm, 
                                  use_res=use_res,
-                                 dropout=None,
+                                 dropout=dropout[4],
+                                 ch_c=ch_c,
                                  **kwargs)
 
         self.init_weights()
@@ -248,7 +259,6 @@ class EncoderF_Res(nn.Module):
         x = self.res5(x, c)
         return x
 
-
     def forward_with_cp(self, x, cp):
         x = self.res1(x, cp[0])
         x = self.res2(x, cp[1])
@@ -258,7 +268,6 @@ class EncoderF_Res(nn.Module):
         x = self.res4(x, cp[3])
         x = self.res5(x, cp[4])
         return x
-
 
     def init_weights(self):
         for module in self.modules():
@@ -286,7 +295,4 @@ class EncoderF_Res(nn.Module):
 # index 6: ([batch, 96, 256, 256])
 # result: ([batch, 3 256, 256])
 if __name__ == '__main__':
-    model = EncoderZ_Res(use_att=True)
-    model.float()
-    y = model(torch.randn(4,1,256,256))
-    print(y.shape)
+    pass
