@@ -70,6 +70,8 @@ def parse_args():
     parser.add_argument('--dim_f', type=int, default=16)
     parser.add_argument('--no_res', action='store_true')
     parser.add_argument('--no_cond_e', action='store_true')
+    parser.add_argument('--chunk_size_z_e', type=int, default=0)
+    parser.add_argument('--dim_encoder_c', type=int, default=128)
 
     parser.add_argument('--finetune_g', default=True)
     parser.add_argument('--finetune_d', default=True)
@@ -175,7 +177,10 @@ def train(dev, world_size, config, args,
                    init_e=args.weight_init,
                    use_attention=args.use_attention,
                    use_res=(not args.no_res),
-                   dim_f=args.dim_f)
+                   dim_f=args.dim_f,
+                   dim_encoder_c=args.dim_encoder_c,
+                   chunk_size_z_e=args.chunk_size_z_e,
+                   )
     EG.train()
     D = models.Discriminator(**config)
     D.train()
@@ -280,15 +285,22 @@ def train(dev, world_size, config, args,
                 c = c.repeat_interleave(args.num_copy, dim=0)
 
             # Sample z
-            z = torch.zeros((args.size_batch * args.num_copy,
+            z_g = torch.zeros((args.size_batch * args.num_copy,
                                 args.dim_z)).to(dev)
-            z.normal_(mean=args.mu_z, std=args.std_z)
+            z_g.normal_(mean=args.mu_z, std=args.std_z)
+
+            if args.chunk_size_z_e > 0:
+                z_e = torch.zeros((args.size_batch * args.num_copy,
+                                args.chunk_size_z_e * 5)).to(dev)
+                z_e.normal_(mean=args.mu_z, std=args.std_z)
+            else:
+                z_e = None
 
             x_gray = transforms.Grayscale()(x)
 
             # Generate fake image
             with autocast():
-                fake = EG(x_gray, c, z)
+                fake = EG(x_gray, c, z_g, z_e)
 
             # DISCRIMINATOR 
             if args.unaligned_sample:

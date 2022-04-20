@@ -86,7 +86,7 @@ def v005():
     print(name, 'started')
     id_code = sha256(name.encode('utf-8')).hexdigest()[:LEN_HASH]
 
-    model = EncoderF_Res(norm='adabatch', ch_c=77)
+    model = EncoderF_Res(norm='adabatch', dim_c=77)
     model.eval()
 
     saver(inputs=[torch.randn(4, 1, 256, 256), torch.randn(4, 77)],
@@ -125,12 +125,36 @@ def v007():
     print(name, 'started')
     id_code = sha256(name.encode('utf-8')).hexdigest()[:LEN_HASH]
 
-    model = EncoderF_Res(norm='adabatch', ch_c=60, z_chunk_size=10)
+    model = EncoderF_Res(norm='adabatch', dim_c=60, chunk_size_z=10)
     model.eval()
 
     saver(inputs=[torch.randn(4, 1, 256, 256), torch.randn(4, 50), torch.randn(4, 50)],
           model=model,
           in_map_fn=lambda m, x: m(x[0], x[1], x[2]),
+          out_map_fn=lambda x: [x],
+          id_code=id_code,
+          )
+
+
+def v008():
+    name = globals()[inspect.getframeinfo(inspect.currentframe()).function].__name__
+    print(name, 'started')
+    id_code = sha256(name.encode('utf-8')).hexdigest()[:LEN_HASH]
+
+    with open('pretrained/config.pickle', 'rb') as f:
+        config = pickle.load(f)
+    path_ckpt_G = 'pretrained/G_ema_256.pth'
+
+    model = Colorizer(config, path_ckpt_G, dim_encoder_c=145, chunk_size_z_e=17)
+    model.eval()
+
+    saver(inputs=[torch.randn(4, 1, 256, 256),
+                  torch.randint(0, 999, (4,)).long(),
+                  torch.randn(4, 119),
+                  torch.randn(4, 85),
+                  ],
+          model=model,
+          in_map_fn=lambda m, x: m(x[0], x[1], x[2], x[3]),
           out_map_fn=lambda x: [x],
           id_code=id_code,
           )

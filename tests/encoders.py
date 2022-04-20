@@ -52,7 +52,7 @@ class Tester(TestCase):
         c = torch.load(join(PATH_STORAGE, '%s_input_1') % id_code)
         output = torch.load(join(PATH_STORAGE, '%s_output_0') % id_code)
 
-        model = EncoderF_Res(norm='adabatch', ch_c=77)
+        model = EncoderF_Res(norm='adabatch', dim_c=77)
         model.eval()
         name_model = type(model).__name__
         model.load_state_dict(
@@ -70,7 +70,7 @@ class Tester(TestCase):
         z = torch.load(join(PATH_STORAGE, '%s_input_2') % id_code)
         output = torch.load(join(PATH_STORAGE, '%s_output_0') % id_code)
 
-        model = EncoderF_Res(norm='adabatch', ch_c=60, z_chunk_size=10)
+        model = EncoderF_Res(norm='adabatch', dim_c=60, chunk_size_z=10)
         model.eval()
         name_model = type(model).__name__
         model.load_state_dict(

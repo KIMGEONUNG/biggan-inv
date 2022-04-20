@@ -170,17 +170,17 @@ class ResConvBlock(nn.Module):
 class EncoderF_Res(nn.Module):
 
     def __init__(self,
-                 ch_in=1,
-                 ch_out=768,
-                 ch_unit=96,
-                 ch_c=128,
+                 dim_in=1,
+                 dim_out=768,
+                 dim_unit=96,
+                 dim_c=128,
                  norm='batch',
                  activation='relu',
                  init='ortho',
                  use_att=False,
                  use_res=True,
                  dropout=[0.2, 0.2, 0.2, 0.2, None],
-                 z_chunk_size=0,
+                 chunk_size_z=0,
                  ):
         super().__init__()
 
@@ -188,7 +188,7 @@ class EncoderF_Res(nn.Module):
         self.use_att = use_att
 
         self.num_blocks = 5
-        self.z_chunk_size = z_chunk_size
+        self.chunk_size_z = chunk_size_z
 
         kwargs = {}
         if activation == 'lrelu':
@@ -206,57 +206,56 @@ class EncoderF_Res(nn.Module):
             self.att = Attention(384, conv4att)
 
         # output is 96 x 256 x 256
-        self.res1 = ResConvBlock(ch_in, ch_unit * 1,
+        self.res1 = ResConvBlock(dim_in, dim_unit * 1,
                                  is_down=False, 
                                  activation=activation,
                                  norm=norm,
                                  use_res=use_res,
                                  dropout=dropout[0],
-                                 ch_c=ch_c,
+                                 ch_c=dim_c,
                                  **kwargs)
         # output is 192 x 128 x 128 
-        self.res2 = ResConvBlock(ch_unit * 1, ch_unit * 2,
+        self.res2 = ResConvBlock(dim_unit * 1, dim_unit * 2,
                                  is_down=True, 
                                  activation=activation,
                                  norm=norm,
                                  use_res=use_res,
                                  dropout=dropout[1],
-                                 ch_c=ch_c,
+                                 ch_c=dim_c,
                                  **kwargs)
         # output is  384 x 64 x 64 
-        self.res3 = ResConvBlock(ch_unit * 2, ch_unit * 4,
+        self.res3 = ResConvBlock(dim_unit * 2, dim_unit * 4,
                                  is_down=True, 
                                  activation=activation,
                                  norm=norm,
                                  use_res=use_res,
                                  dropout=dropout[2],
-                                 ch_c=ch_c,
+                                 ch_c=dim_c,
                                  **kwargs)
         # output is  768 x 32 x 32 
-        self.res4 = ResConvBlock(ch_unit * 4, ch_unit * 8,
+        self.res4 = ResConvBlock(dim_unit * 4, dim_unit * 8,
                                  is_down=True, 
                                  activation=activation,
                                  norm=norm,
                                  use_res=use_res,
                                  dropout=dropout[3],
-                                 ch_c=ch_c,
+                                 ch_c=dim_c,
                                  **kwargs)
         # output is  768 x 16 x 16 
-        self.res5 = ResConvBlock(ch_unit * 8, ch_unit * 8,
+        self.res5 = ResConvBlock(dim_unit * 8, dim_unit * 8,
                                  is_down=True, 
                                  activation=activation,
                                  norm=norm, 
                                  use_res=use_res,
                                  dropout=dropout[4],
-                                 ch_c=ch_c,
+                                 ch_c=dim_c,
                                  **kwargs)
         self.init_weights()
 
     def forward(self, x, c=None, z=None):
-
         # Set condition
-        if self.z_chunk_size != 0:
-            zs = torch.split(z, self.z_chunk_size, 1)
+        if self.chunk_size_z != 0:
+            zs = torch.split(z, self.chunk_size_z, 1)
             cs = [torch.cat([c, item], 1) for item in zs]
         else:
             cs = [c] * self.num_blocks

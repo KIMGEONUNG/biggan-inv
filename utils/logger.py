@@ -98,9 +98,16 @@ def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name,
     xs = xs.repeat_interleave(args.num_copy_test, dim=0)
     cs = cs.repeat_interleave(args.num_copy_test, dim=0)
     x_gs = x_gs.repeat_interleave(args.num_copy_test, dim=0)
+
     zs = torch.zeros((xs.shape[0], dim_z))
     zs.normal_(mean=args.mu_z, std=args.std_z)
     
+    if args.chunk_size_z_e > 0:
+        z_es = torch.zeros((xs.shape[0], args.chunk_size_z_e * 5))
+        z_es.normal_(mean=args.mu_z, std=args.std_z)
+    else:
+        z_es = None
+
     EG.eval()
 
     for i in range(len(xs) // batch_size):
@@ -110,12 +117,18 @@ def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name,
         x_g = x_gs[batch_size * i: batch_size * (i + 1), ...]
         z, c, x_g = z.to(dev), c.to(dev), x_g.to(dev)
 
+        if args.chunk_size_z_e > 0:
+            z_e = z_es[batch_size * i: batch_size * (i + 1), ...]
+            z_e = z_e.to(dev)
+        else:
+            z_e = None
+
         with torch.no_grad():
             if ema is None:
-                output = EG(x_g, c, z)
+                output = EG(x_g, c, z, z_e)
             else:
                 with ema.average_parameters():
-                    output = EG(x_g, c, z)
+                    output = EG(x_g, c, z, z_e)
             output = output.add(1).div(2).detach().cpu()
 
         output_fusion = lab_fusion(x, output)
