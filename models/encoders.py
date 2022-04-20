@@ -179,19 +179,23 @@ class EncoderF_Res(nn.Module):
                  init='ortho',
                  use_att=False,
                  use_res=True,
-                 dropout=[0.2, 0.2, 0.2, 0.2, None]
+                 dropout=[0.2, 0.2, 0.2, 0.2, None],
+                 z_chunk_size=0,
                  ):
         super().__init__()
 
         self.init = init
         self.use_att = use_att
 
+        self.num_blocks = 5
+        self.z_chunk_size = z_chunk_size
+
         kwargs = {}
         if activation == 'lrelu':
             kwargs['l_slope'] = 0.2
 
         if use_att:
-            print('Adding attention layer in E at resolution %d' % (64))
+            raise NotImplementedError()
             conv4att = functools.partial(
                 SNConv2d,
                 kernel_size=3,
@@ -246,27 +250,22 @@ class EncoderF_Res(nn.Module):
                                  dropout=dropout[4],
                                  ch_c=ch_c,
                                  **kwargs)
-
         self.init_weights()
 
-    def forward(self, x, c=None):
-        x = self.res1(x, c)
-        x = self.res2(x, c)
-        x = self.res3(x, c)
-        if self.use_att:
-            x = self.att(x)
-        x = self.res4(x, c)
-        x = self.res5(x, c)
-        return x
+    def forward(self, x, c=None, z=None):
 
-    def forward_with_cp(self, x, cp):
-        x = self.res1(x, cp[0])
-        x = self.res2(x, cp[1])
-        x = self.res3(x, cp[2])
-        if self.use_att:
-            x = self.att(x)
-        x = self.res4(x, cp[3])
-        x = self.res5(x, cp[4])
+        # Set condition
+        if self.z_chunk_size != 0:
+            zs = torch.split(z, self.z_chunk_size, 1)
+            cs = [torch.cat([c, item], 1) for item in zs]
+        else:
+            cs = [c] * self.num_blocks
+
+        # Feedforward
+        for i in range(0, self.num_blocks):
+            block = getattr(self, 'res%d' % (i + 1)) 
+            x = block(x, cs[i])
+
         return x
 
     def init_weights(self):

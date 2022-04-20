@@ -62,5 +62,24 @@ class Tester(TestCase):
         y = model(x, c)
         self.assertTrue(torch.equal(output, y))
 
+    def test_Encoder_4(self):
+        id_code = sha256('v007'.encode('utf-8')).hexdigest()[:LEN_HASH]
+        
+        x = torch.load(join(PATH_STORAGE, '%s_input_0') % id_code)
+        c = torch.load(join(PATH_STORAGE, '%s_input_1') % id_code)
+        z = torch.load(join(PATH_STORAGE, '%s_input_2') % id_code)
+        output = torch.load(join(PATH_STORAGE, '%s_output_0') % id_code)
+
+        model = EncoderF_Res(norm='adabatch', ch_c=60, z_chunk_size=10)
+        model.eval()
+        name_model = type(model).__name__
+        model.load_state_dict(
+                torch.load(join(PATH_STORAGE, '%s_m_%s') % (id_code, name_model)),
+                strict=True)
+
+        y = model(x, c, z)
+        self.assertTrue(torch.equal(output, y))
+
+
 if __name__ == '__main__':
     unittest.main()

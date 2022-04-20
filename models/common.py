@@ -98,37 +98,27 @@ class Colorizer(nn.Module):
                  init_e=None,
                  use_attention=False,
                  use_res=True,
-                 dim_f=16):
+                 dim_f=16,
+                 dim_encoder_z=None):
         super().__init__()
 
         self.id_mid_layer = id_mid_layer  
         self.use_attention = use_attention
         self.use_res = use_res
 
-        if not use_res:
-            print('Warning: without residual path')
-
-        if dim_f == 64:
-            raise
-        elif dim_f == 32:
-            raise
-        elif dim_f == 16:
+        if dim_f == 16:
             self.E = EncoderF_Res(norm=norm_type,
                                   activation=activation,
                                   init=init_e,
                                   use_res=use_res,
                                   use_att=use_attention)
             self.id_mid_layer = 2  
-        elif dim_f == 8:
-            raise
-        elif dim_f == 1:
-            raise
         else:
             raise Exception('In valid dim_f')
 
+        # Generator setting 
         self.G = Generator(**config)
         if load_g:
-            print('Use pretraind G')
             self.G.load_state_dict(torch.load(path_ckpt_g, map_location='cpu'),
                                    strict=False)
         self.fix_g = fix_g
@@ -136,34 +126,9 @@ class Colorizer(nn.Module):
             for p in self.G.parameters():
                 p.requires_grad = False
 
-    def forward(self, x_gray, c, z):
-        f = self.E(x_gray, self.G.shared(c)) 
-        output = self.G.forward_from(z, self.G.shared(c), 
-                self.id_mid_layer, f)
-        return output
-
-    def forward_with_c(self, x_gray, c_embd, z):
+    def forward(self, x_gray, c, z_g, z_e=None):
+        c_embd = self.G.shared(c)
         f = self.E(x_gray, c_embd) 
-        output = self.G.forward_from(z, c_embd, 
-                self.id_mid_layer, f)
-        return output
+        output = self.G.forward_from(z_g, c_embd, self.id_mid_layer, f)
 
-    def forward_with_c2(self, x_gray, c_embds, z):
-        f = self.E(x_gray, c_embds[0]) 
-        output = self.G.forward_from(z, c_embds[1], 
-                self.id_mid_layer, f)
         return output
-
-    def forward_with_cp(self, x_gray, c_embds, z):
-        c_embds_E = c_embds[:5]
-        c_embds_G = c_embds[5:]
-        f = self.E.forward_with_cp(x_gray, c_embds_E) 
-        output = self.G.forward_from_with_cp(z, c_embds_G, 
-                                             self.id_mid_layer, f)
-        return output
-
-    def train(self, mode=True):
-        if self.fix_g:
-            self.E.train(mode)
-        else:
-            super().train(mode)
