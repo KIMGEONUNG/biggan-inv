@@ -90,7 +90,7 @@ class Colorizer(nn.Module):
     def __init__(self, 
                  config, 
                  path_ckpt_g, 
-                 norm_type,
+                 norm_type='adabatch',
                  activation='relu',
                  id_mid_layer=2, 
                  fix_g=False,

@@ -5,18 +5,19 @@ from typing import List, Callable
 from hashlib import sha256
 from os.path import join
 
-from models import (ResConvBlock, EncoderF_Res)
+from models import (ResConvBlock, EncoderF_Res, Colorizer)
 from global_config import LEN_HASH
 
 import inspect
 import argparse
+import pickle
+
 
 def parse():
     p = argparse.ArgumentParser()
     p.add_argument('targets', type=str, nargs='+')
 
     return p.parse_args()
-
 
 
 def v001():
@@ -64,7 +65,6 @@ def v003():
           id_code=id_code,
           )
 
-
 def v004():
     name = globals()[inspect.getframeinfo(inspect.currentframe()).function].__name__
     print(name, 'started')
@@ -76,6 +76,45 @@ def v004():
     saver(inputs=[torch.randn(4, 1, 256, 256), torch.randn(4, 128)],
           model=model,
           in_map_fn=lambda m, x: m(x[0],x[1]),
+          out_map_fn=lambda x: [x],
+          id_code=id_code,
+          )
+
+
+def v005():
+    name = globals()[inspect.getframeinfo(inspect.currentframe()).function].__name__
+    print(name, 'started')
+    id_code = sha256(name.encode('utf-8')).hexdigest()[:LEN_HASH]
+
+    model = EncoderF_Res(norm='adabatch', ch_c=77)
+    model.eval()
+
+    saver(inputs=[torch.randn(4, 1, 256, 256), torch.randn(4, 77)],
+          model=model,
+          in_map_fn=lambda m, x: m(x[0],x[1]),
+          out_map_fn=lambda x: [x],
+          id_code=id_code,
+          )
+
+
+def v006():
+    name = globals()[inspect.getframeinfo(inspect.currentframe()).function].__name__
+    print(name, 'started')
+    id_code = sha256(name.encode('utf-8')).hexdigest()[:LEN_HASH]
+
+    with open('pretrained/config.pickle', 'rb') as f:
+        config = pickle.load(f)
+    path_ckpt_G = 'pretrained/G_ema_256.pth'
+
+    model = Colorizer(config, path_ckpt_G)
+
+    model.eval()
+
+    saver(inputs=[torch.randn(4, 1, 256, 256),
+                  torch.randint(0, 999, (4,)).long(),
+                  torch.randn(4, 119)],
+          model=model,
+          in_map_fn=lambda m, x: m(x[0], x[1], x[2]),
           out_map_fn=lambda x: [x],
           id_code=id_code,
           )
