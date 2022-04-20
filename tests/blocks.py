@@ -23,7 +23,7 @@ class Tester(TestCase):
         model.eval()
         name_model = type(model).__name__
         model.load_state_dict(
-                torch.load(join(PATH_STORAGE, '%s_m_ResConvBlock') % (id_code, name_model)),
+                torch.load(join(PATH_STORAGE, '%s_m_%s') % (id_code, name_model)),
                 strict=True)
 
         y = model(x)
@@ -40,7 +40,7 @@ class Tester(TestCase):
         model.eval()
         name_model = type(model).__name__
         model.load_state_dict(
-                torch.load(join(PATH_STORAGE, '%s_m_ResConvBlock') % (id_code, name_model)),
+                torch.load(join(PATH_STORAGE, '%s_m_%s') % (id_code, name_model)),
                 strict=True)
 
         y = model(x)
