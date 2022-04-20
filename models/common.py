@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
-from .encoders import (EncoderF_Res, EncoderF32_Res, EncoderF64_Res,
-                       EncoderZ_Res, EncoderF8_Res)
+from .encoders import EncoderF_Res
 from .biggan import Generator
 
 class VGG16Perceptual(nn.Module):
@@ -110,17 +109,9 @@ class Colorizer(nn.Module):
             print('Warning: without residual path')
 
         if dim_f == 64:
-            self.E = EncoderF64_Res(norm=norm_type,
-                                  activation=activation,
-                                  init=init_e,
-                                  use_att=use_attention)
-            self.id_mid_layer = 4  
+            raise
         elif dim_f == 32:
-            self.E = EncoderF32_Res(norm=norm_type,
-                                  activation=activation,
-                                  init=init_e,
-                                  use_att=use_attention)
-            self.id_mid_layer = 3  
+            raise
         elif dim_f == 16:
             self.E = EncoderF_Res(norm=norm_type,
                                   activation=activation,
@@ -129,17 +120,9 @@ class Colorizer(nn.Module):
                                   use_att=use_attention)
             self.id_mid_layer = 2  
         elif dim_f == 8:
-            self.E = EncoderF8_Res(norm=norm_type,
-                                  activation=activation,
-                                  init=init_e,
-                                  use_att=use_attention)
-            self.id_mid_layer = 1 
+            raise
         elif dim_f == 1:
-            self.E = EncoderZ_Res(norm=norm_type,
-                                  activation=activation,
-                                  init=init_e,
-                                  use_att=use_attention)
-            self.id_mid_layer = 0
+            raise
         else:
             raise Exception('In valid dim_f')
 
