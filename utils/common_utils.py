@@ -3,12 +3,12 @@ import torch.nn as nn
 from torch.utils.data import Subset 
 import torchvision.transforms as transforms
 from torchvision.transforms import ToTensor, Grayscale
-from torchvision.datasets import ImageFolder
 from torchvision.utils import make_grid
 from torch.utils.data import DataLoader
 import numpy as np
 from skimage import color
 from .color_models import rgb2lab, lab2rgb
+from .dataset_utils import GrayGTPairDataset 
 
 
 LAYER_DIM = {
@@ -82,10 +82,10 @@ def prepare_dataset(
             ])):
 
 
-    dataset = ImageFolder(path_train, transform=prep)
+    dataset = GrayGTPairDataset(path_train, transform=prep)
     dataset = extract(dataset, index_target)
 
-    dataset_val = ImageFolder(path_valid, transform=prep)
+    dataset_val = GrayGTPairDataset(path_valid, transform=prep)
     dataset_val = extract(dataset_val, index_target)
     return dataset, dataset_val
 
@@ -95,9 +95,7 @@ def extract_sample(dataset, num_sample, is_shuffle, pin_memory=True):
             shuffle=is_shuffle, num_workers=4, pin_memory=pin_memory,
             drop_last=True)
 
-    x, c = next(iter(dataloader))
-    x_g = transforms.Grayscale()(x)
-
+    x_g, x, c = next(iter(dataloader))
     return {'xs': x, 'cs': c, 'x_gs': x_g}
 
 

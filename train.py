@@ -267,25 +267,22 @@ def train(dev, world_size, config, args,
 
         tbar = tqdm(dataloader)
         tbar.set_description('epoch: %03d' % epoch)
-        for i, (x, c) in enumerate(tbar):
+        for i, (x_g, x, c) in enumerate(tbar):
             EG.train()
 
-            x, c = x.to(dev), c.to(dev)
+            x_g, x, c = x_g.to(dev), x.to(dev), c.to(dev)
 
             # Sample z
-            z_g = torch.zeros((args.size_batch,
-                                args.dim_z)).to(dev)
+            z_g = torch.zeros((args.size_batch, args.dim_z)).to(dev)
             z_g.normal_(mean=args.mu_z, std=args.std_z)
-
-            x_gray = transforms.Grayscale()(x)
 
             # Generate fake image
             with autocast():
-                fake = EG(x_gray, c, z_g)
+                fake = EG(x_g, c, z_g)
 
             # DISCRIMINATOR 
             if args.unaligned_sample:
-                x_real, c_real = next(dataloader_d_iterator)
+                _, x_real, c_real = next(dataloader_d_iterator)
                 x_real, c_real = x_real.to(dev), c_real.to(dev)
             else:
                 x_real = x
