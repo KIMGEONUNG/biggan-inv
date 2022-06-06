@@ -42,30 +42,6 @@ def loss_fn_g(D, x, c, args, fake, vgg_per, loss_dict, dev=None):
         loss += loss_vgg_per
         enroll_loss('vgg_per', loss_vgg_per.item(), loss_dict)
 
-    if 'zhinge' in args.loss_targets:
-        raise NotImplementedError()
-        loss_fn = color_histogram_loss()
-        loss_zhinge = args.coef_zhinge * loss_fn(fake_ranged, args.num_copy)
-        loss += loss_zhinge
-        enroll_loss('zhinge', loss_zhinge.item(), loss_dict)
-
-    if 'wip' in args.loss_targets:
-        num_sample = fake_ranged.shape[0]
-        feats = RGBuvHistBlock(device=dev)(fake_ranged)
-        mse = nn.MSELoss()
-
-        num_cal = 0
-        loss_sum =0 
-        for i in range(num_sample - 1):
-            for j in range(i, num_sample):
-                loss_sum += mse(feats[i], feats[j])
-                num_cal += 1
-        loss_sum /= num_cal
-
-        loss_wip = args.coef_wip * -loss_sum
-        loss += loss_wip
-        enroll_loss('wip', loss_wip.item(), loss_dict)
-
     return loss
 
 

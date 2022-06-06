@@ -100,7 +100,6 @@ class Colorizer(nn.Module):
                  use_res=True,
                  dim_f=16,
                  dim_encoder_c=128,
-                 chunk_size_z_e=0,
                  ):
         super().__init__()
 
@@ -114,8 +113,7 @@ class Colorizer(nn.Module):
                                   init=init_e,
                                   use_res=use_res,
                                   use_att=use_attention,
-                                  dim_c=dim_encoder_c,
-                                  chunk_size_z=chunk_size_z_e
+                                  dim_c=dim_encoder_c
                                   )
             self.id_mid_layer = 2  
         else:
@@ -133,7 +131,7 @@ class Colorizer(nn.Module):
 
     def forward(self, x_gray, c, z_g, z_e=None):
         c_embd = self.G.shared(c)
-        f = self.E(x_gray, c_embd, z_e) 
+        f = self.E(x_gray, c_embd) 
         output = self.G.forward_from(z_g, c_embd, self.id_mid_layer, f)
 
         return output

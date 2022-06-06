@@ -188,7 +188,6 @@ class EncoderF_Res(nn.Module):
         self.use_att = use_att
 
         self.num_blocks = 5
-        self.chunk_size_z = chunk_size_z
 
         kwargs = {}
         if activation == 'lrelu':
@@ -253,17 +252,18 @@ class EncoderF_Res(nn.Module):
         self.init_weights()
 
     def forward(self, x, c=None, z=None):
-        # Set condition
-        if self.chunk_size_z != 0:
-            zs = torch.split(z, self.chunk_size_z, 1)
-            cs = [torch.cat([c, item], 1) for item in zs]
-        else:
-            cs = [c] * self.num_blocks
+        # # Set condition
+        # if self.chunk_size_z != 0:
+        #     zs = torch.split(z, self.chunk_size_z, 1)
+        #     cs = [torch.cat([c, item], 1) for item in zs]
+        # else:
+        #     cs = [c] * self.num_blocks
 
         # Feedforward
         for i in range(0, self.num_blocks):
             block = getattr(self, 'res%d' % (i + 1)) 
-            x = block(x, cs[i])
+            x = block(x, c)
+            # x = block(x, cs[i])
 
         return x
 

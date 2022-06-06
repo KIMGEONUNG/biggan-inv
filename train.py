@@ -107,11 +107,7 @@ def parse_args():
 
     # Loss
     parser.add_argument('--loss_targets', type=str, nargs='+', required=True,
-                        choices=['mse', 'vgg_per', 'adv', 'zhinge',
-                                 'wip'])
-
-    parser.add_argument('--eval_targets', type=str, nargs='+', required=True,
-                        choices=['color_scatter_score'])
+                        choices=['mse', 'vgg_per', 'adv'])
 
     parser.add_argument('--coef_mse', type=float, default=1.0)
     parser.add_argument('--coef_vgg_per', type=float, default=0.2)
@@ -125,8 +121,6 @@ def parse_args():
     parser.add_argument('--decay_ema_g', type=float, default=0.999)
 
     # Others
-    parser.add_argument('--num_copy', type=int, default=4)
-    parser.add_argument('--num_copy_test', type=int, default=4)
     parser.add_argument('--dim_z', type=int, default=119)
     parser.add_argument('--std_z', type=float, default=0.8)
     parser.add_argument('--mu_z', type=float, default=1.0)
@@ -179,7 +173,6 @@ def train(dev, world_size, config, args,
                    use_res=(not args.no_res),
                    dim_f=args.dim_f,
                    dim_encoder_c=args.dim_encoder_c,
-                   chunk_size_z_e=args.chunk_size_z_e,
                    )
     EG.train()
     D = models.Discriminator(**config)
@@ -279,28 +272,16 @@ def train(dev, world_size, config, args,
 
             x, c = x.to(dev), c.to(dev)
 
-            # Duplicate
-            if args.num_copy != 1:
-                x = x.repeat_interleave(args.num_copy, dim=0)
-                c = c.repeat_interleave(args.num_copy, dim=0)
-
             # Sample z
-            z_g = torch.zeros((args.size_batch * args.num_copy,
+            z_g = torch.zeros((args.size_batch,
                                 args.dim_z)).to(dev)
             z_g.normal_(mean=args.mu_z, std=args.std_z)
-
-            if args.chunk_size_z_e > 0:
-                z_e = torch.zeros((args.size_batch * args.num_copy,
-                                args.chunk_size_z_e * 5)).to(dev)
-                z_e.normal_(mean=args.mu_z, std=args.std_z)
-            else:
-                z_e = None
 
             x_gray = transforms.Grayscale()(x)
 
             # Generate fake image
             with autocast():
-                fake = EG(x_gray, c, z_g, z_e)
+                fake = EG(x_gray, c, z_g)
 
             # DISCRIMINATOR 
             if args.unaligned_sample:
@@ -350,7 +331,6 @@ def train(dev, world_size, config, args,
 
             if num_iter % args.interval_save_loss == 0:
                 loss_dict = {}
-
             if num_iter % args.interval_save_train == 0 and is_main_dev:
                 make_log_img(EG, args.dim_z, writer, args, sample_train,
                         dev, num_iter, 'train')

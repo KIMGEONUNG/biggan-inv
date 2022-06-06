@@ -85,28 +85,17 @@ def make_log_scalar(writer, num_iter, loss_dict: dict, num_sample):
     loss_dict.clear()
 
 
-def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name,
-        ema=None):
+def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name, ema=None):
     outputs_rgb = []
     outputs_fusion = []
-    batch_size = args.size_batch * args.num_copy
+    batch_size = args.size_batch 
 
     xs: torch.Tensor = sample['xs']
     cs: torch.Tensor = sample['cs']
     x_gs: torch.Tensor = sample['x_gs']
 
-    xs = xs.repeat_interleave(args.num_copy_test, dim=0)
-    cs = cs.repeat_interleave(args.num_copy_test, dim=0)
-    x_gs = x_gs.repeat_interleave(args.num_copy_test, dim=0)
-
     zs = torch.zeros((xs.shape[0], dim_z))
     zs.normal_(mean=args.mu_z, std=args.std_z)
-    
-    if args.chunk_size_z_e > 0:
-        z_es = torch.zeros((xs.shape[0], args.chunk_size_z_e * 5))
-        z_es.normal_(mean=args.mu_z, std=args.std_z)
-    else:
-        z_es = None
 
     EG.eval()
 
@@ -117,18 +106,12 @@ def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name,
         x_g = x_gs[batch_size * i: batch_size * (i + 1), ...]
         z, c, x_g = z.to(dev), c.to(dev), x_g.to(dev)
 
-        if args.chunk_size_z_e > 0:
-            z_e = z_es[batch_size * i: batch_size * (i + 1), ...]
-            z_e = z_e.to(dev)
-        else:
-            z_e = None
-
         with torch.no_grad():
             if ema is None:
-                output = EG(x_g, c, z, z_e)
+                output = EG(x_g, c, z)
             else:
                 with ema.average_parameters():
-                    output = EG(x_g, c, z, z_e)
+                    output = EG(x_g, c, z)
             output = output.add(1).div(2).detach().cpu()
 
         output_fusion = lab_fusion(x, output)
@@ -145,20 +128,5 @@ def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name,
     grid = make_grid(outputs_fusion, nrow=4)
     writer.add_image('recon_%s_fusion' % name, 
             grid, num_iter)
-
-    if 'color_scatter_score' in args.eval_targets:
-        num_sample = args.num_copy_test
-        mse = nn.MSELoss()
-        with torch.no_grad():
-            feats = RGBuvHistBlock(device=dev)(outputs_rgb.to(dev)).to(dev)
-            score = 0 
-            num_cal = 0
-            for feat in feats.split(num_sample):
-                for i in range(num_sample - 1):
-                    for j in range(i, num_sample):
-                        score += mse(feats[i], feats[j])
-                        num_cal += 1
-            score /= num_cal
-        writer.add_scalar('color_scatter_score', score, num_iter)
 
     writer.flush()

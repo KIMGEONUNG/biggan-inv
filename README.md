@@ -1,4 +1,9 @@
 ## Experiments 
+
+
+## Todo
+
+- configuraion check
  
 ### color histogram contrast
 
