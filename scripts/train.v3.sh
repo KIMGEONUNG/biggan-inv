@@ -4,7 +4,7 @@ source config.system.sh
 
 INDEX_TARGET=$(echo {0..99})
 LOSS_TARGETS="adv"
-NUM_EPOCH=5
+NUM_EPOCH=10
 
 CUDA_VISIBLE_DEVICES=$GPUS python -W ignore train.py \
                     --vgg_target_layers 1 2 13 20 \
