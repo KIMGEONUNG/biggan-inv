@@ -3,7 +3,6 @@ from os.path import join, exists
 import models
 from models import Colorizer, VGG16Perceptual
 
-from torch.utils.tensorboard import SummaryWriter
 import torch
 import torch.optim as optim
 from torch.utils.data.dataloader import DataLoader 
@@ -22,16 +21,15 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from utils.losses import loss_fn_d, loss_fn_g
-from utils.common_utils import (extract_sample, set_seed,
-        make_grid_multi, prepare_dataset)
-from utils.logger import (make_log_scalar, make_log_img, 
-                          make_log_ckpt, load_for_retrain,
+from utils.common_utils import (extract_sample, set_seed, prepare_dataset)
+from utils.logger import (make_log_img, make_log_ckpt, load_for_retrain,
                           load_for_retrain_EMA)
 from utils.common_utils import color_enhacne_blend
 import utils
 
 from torch_ema import ExponentialMovingAverage
 from functools import partial
+import wandb
 
 
 def parse_args():
@@ -76,13 +74,10 @@ def parse_args():
     parser.add_argument('--finetune_g', default=True)
     parser.add_argument('--finetune_d', default=True)
 
-    parser.add_argument('--unaligned_sample', action='store_true')
-
     # Logger
     parser.add_argument('--interval_save_loss', type=int, default=20)
     parser.add_argument('--interval_save_train', type=int, default=150)
-    parser.add_argument('--interval_save_test', type=int, default=2000)
-    parser.add_argument('--interval_save_ckpt', type=int, default=4000)
+    parser.add_argument('--interval_save_test', type=int, default=200)
     parser.add_argument('--num_test_sample', type=int, default=16)
     parser.add_argument('--num_row_grid', type=int, default=4)
 
@@ -158,7 +153,8 @@ def train(dev, world_size, config, args,
     is_main_dev = dev == 0 
     setup_dist(dev, world_size, args.port)
     if is_main_dev:
-        writer = SummaryWriter(path_log)
+        wandb.login()
+        wandb.init(project="my-test-project", config=vars(args))
 
     # Setup model
     EG = Colorizer(config, 
@@ -200,8 +196,6 @@ def train(dev, world_size, config, args,
         scheduler_d = optim.lr_scheduler.LambdaLR(optimizer=optimizer_d,
                         lr_lambda=schedule)
 
-
-    # Retrain(opt)
     num_iter = 0
     epoch_start = 0
     if args.retrain:
@@ -245,14 +239,6 @@ def train(dev, world_size, config, args,
             sampler=sampler, pin_memory=True,
             num_workers=args.num_worker, drop_last=True)
 
-    if args.unaligned_sample:
-        sampler_d = DistributedSampler(dataset, seed=77)
-        dataloader_d = DataLoader(dataset, batch_size=args.size_batch, 
-                shuffle=True if sampler_d is None else False, 
-                sampler=sampler_d, pin_memory=True,
-                num_workers=args.num_worker, drop_last=True)
-
-
     color_enhance = partial(color_enhacne_blend, factor=args.coef_enhance)
 
     # AMP
@@ -261,9 +247,6 @@ def train(dev, world_size, config, args,
     loss_dict = {}
     for epoch in range(epoch_start, args.num_epoch):
         sampler.set_epoch(epoch)
-        if args.unaligned_sample:
-            sampler_d.set_epoch(epoch)
-            dataloader_d_iterator = iter(dataloader_d)
 
         tbar = tqdm(dataloader)
         tbar.set_description('epoch: %03d' % epoch)
@@ -281,12 +264,8 @@ def train(dev, world_size, config, args,
                 fake = EG(x_g, c, z_g)
 
             # DISCRIMINATOR 
-            if args.unaligned_sample:
-                _, x_real, c_real = next(dataloader_d_iterator)
-                x_real, c_real = x_real.to(dev), c_real.to(dev)
-            else:
-                x_real = x
-                c_real = c
+            x_real = x
+            c_real = c
 
             if args.use_enhance:
                 x_real = color_enhance(x)
@@ -322,27 +301,24 @@ def train(dev, world_size, config, args,
             if is_main_dev:
                 ema_g.update()
 
-            # Logger
-            if num_iter % args.interval_save_loss == 0 and is_main_dev:
-                make_log_scalar(writer, num_iter, loss_dict, args.interval_save_loss)
+            # Logging
+            if is_main_dev:
+                if num_iter % args.interval_save_loss == 0:
+
+                    # We average the accumulated losses for each interval
+                    for key in loss_dict.keys():
+                        loss_dict[key] = sum(loss_dict[key]) / len(loss_dict[key])
+                    
+                    # Commit loss data
+                    wandb.log(loss_dict, step=num_iter)
+
+                if num_iter % args.interval_save_train == 0:
+                    make_log_img(EG, args.dim_z, args, sample_train, dev, num_iter, 'train', ema=ema_g)
+                if num_iter % args.interval_save_test == 0:
+                    make_log_img(EG, args.dim_z, args, sample_valid, dev, num_iter, 'valid', ema=ema_g)
 
             if num_iter % args.interval_save_loss == 0:
-                loss_dict = {}
-            if num_iter % args.interval_save_train == 0 and is_main_dev:
-                make_log_img(EG, args.dim_z, writer, args, sample_train,
-                        dev, num_iter, 'train')
-
-            if num_iter % args.interval_save_test == 0 and is_main_dev:
-                make_log_img(EG, args.dim_z, writer, args, sample_valid,
-                        dev, num_iter, 'valid')
-
-            if num_iter % args.interval_save_train == 0 and is_main_dev:
-                make_log_img(EG, args.dim_z, writer, args, sample_train,
-                        dev, num_iter, 'train_ema', ema=ema_g)
-
-            if num_iter % args.interval_save_test == 0 and is_main_dev:
-                make_log_img(EG, args.dim_z, writer, args, sample_valid,
-                        dev, num_iter, 'valid_ema', ema=ema_g)
+                loss_dict.clear()
 
             num_iter += 1
 
@@ -364,6 +340,7 @@ def train(dev, world_size, config, args,
 
 
 def main():
+
     args = parse_args()
 
     # Note Retrain
@@ -405,8 +382,6 @@ def main():
 
     # Logger
     path_log = join(args.path_log, args.task_name)
-    writer = SummaryWriter(path_log)
-    writer.add_text('config', str(args))
     print('logger name:', path_log)
 
     # DATASETS
@@ -416,13 +391,11 @@ def main():
             transforms.CenterCrop(256),
             ])
 
-
     dataset, dataset_val = prepare_dataset(
             args.path_imgnet_train,
             args.path_imgnet_val,
             args.index_target,
             prep=prep)
-
 
     is_shuffle = True 
     args.size_batch = int(args.size_batch / num_gpu)
@@ -431,18 +404,11 @@ def main():
     sample_valid = extract_sample(dataset_val, args.num_test_sample,
                                     is_shuffle, pin_memory=False)
 
-    # Logger
-    grid_init = make_grid(sample_train['xs'], nrow=args.num_row_grid)
-    writer.add_image('GT_train', grid_init)
-    grid_init = make_grid(sample_valid['xs'], nrow=args.num_row_grid)
-    writer.add_image('GT_valid', grid_init)
-    writer.flush()
-    writer.close()
-
     mp.spawn(train,
              args=(num_gpu, config, args, dataset, sample_train, 
                    sample_valid, path_ckpts, path_log),
              nprocs=num_gpu)
+
 
 if __name__ == '__main__':
     main()

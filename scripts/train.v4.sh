@@ -3,7 +3,7 @@
 source config.system.sh
 
 INDEX_TARGET=$(echo {0..999})
-LOSS_TARGETS="adv"
+LOSS_TARGETS="mse vgg_per adv"
 NUM_EPOCH=12
 
 CUDA_VISIBLE_DEVICES=$GPUS python -W ignore train.py \

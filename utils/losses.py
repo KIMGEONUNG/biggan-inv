@@ -18,7 +18,7 @@ def loss_fn_d(D, c, real, fake, loss_dict):
     d_loss_real, d_loss_fake = loss_hinge_dis(critic_fake, critic_real)
     loss_d = (d_loss_real + d_loss_fake) / 2  
     
-    enroll_loss('adv_d', loss_d.item(), loss_dict)
+    enroll_loss('loss_adv_d', loss_d.item(), loss_dict)
 
     return loss_d
 
@@ -29,18 +29,18 @@ def loss_fn_g(D, x, c, args, fake, vgg_per, loss_dict, dev=None):
         critic, _ = D(fake, c)
         loss_g = loss_hinge_gen(critic) * args.coef_adv
         loss += loss_g 
-        enroll_loss('adv_g', loss_g.item(), loss_dict)
+        enroll_loss('loss_adv_g', loss_g.item(), loss_dict)
 
     fake_ranged = fake.add(1).div(2)
     if 'mse' in args.loss_targets:
         loss_mse = args.coef_mse * nn.MSELoss()(x, fake_ranged)
         loss += loss_mse
-        enroll_loss('mse', loss_mse.item(), loss_dict)
+        enroll_loss('loss_mse', loss_mse.item(), loss_dict)
 
     if 'vgg_per' in args.loss_targets:
         loss_vgg_per = args.coef_vgg_per * vgg_per(x, fake_ranged)
         loss += loss_vgg_per
-        enroll_loss('vgg_per', loss_vgg_per.item(), loss_dict)
+        enroll_loss('loss_vgg_per', loss_vgg_per.item(), loss_dict)
 
     return loss
 

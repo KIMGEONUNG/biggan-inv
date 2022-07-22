@@ -1,11 +1,10 @@
 import torch
-import torch.nn as nn
 from os.path import join
-from .common_utils import lab_fusion, make_grid_multi
-from torch.cuda.amp import autocast
+from .common_utils import lab_fusion
 from statistics import mean
 from torchvision.utils import make_grid
-from representation import RGBuvHistBlock
+from torchvision.transforms import ToPILImage
+import wandb
 
 
 def make_log_ckpt(EG, D,
@@ -64,6 +63,7 @@ def load_for_retrain(EG, D,
 
     return state['num_iter']
 
+
 def load_for_retrain_EMA(ema_g, epoch, path_ckpts, dev):
     # Encoder&Generator
     name = 'EG_EMA_%03d.ckpt' % epoch 
@@ -72,22 +72,10 @@ def load_for_retrain_EMA(ema_g, epoch, path_ckpts, dev):
     ema_g.load_state_dict(state)
 
 
-def make_log_scalar(writer, num_iter, loss_dict: dict, num_sample):
-    loss_g = mean(loss_dict['adv_g'])
-    loss_d = mean(loss_dict['adv_d'])
-    writer.add_scalars('GAN', 
-        {'adv_g': loss_g, 'adv_d': loss_d}, num_iter)
-
-    del loss_dict['adv_g']
-    del loss_dict['adv_d']
-    for key, value in loss_dict.items():
-        writer.add_scalar(key, mean(value), num_iter)
-    loss_dict.clear()
-
-
-def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name, ema=None):
-    outputs_rgb = []
-    outputs_fusion = []
+def make_log_img(EG, dim_z, args, sample,
+                 dev, num_iter, name, ema=None):
+    rgbs = []
+    fusions = []
     batch_size = args.size_batch 
 
     xs: torch.Tensor = sample['xs']
@@ -116,17 +104,13 @@ def make_log_img(EG, dim_z, writer, args, sample, dev, num_iter, name, ema=None)
 
         output_fusion = lab_fusion(x, output)
 
-        outputs_rgb.append(output)
-        outputs_fusion.append(output_fusion)
+        rgbs.append(output)
+        fusions.append(output_fusion)
 
-    outputs_rgb = torch.cat(outputs_rgb, dim=0)
-    outputs_fusion = torch.cat(outputs_fusion, dim=0)
+    rgbs = torch.cat(rgbs, dim=0)
+    fusions = torch.cat(fusions, dim=0)
 
-    grid = make_grid(outputs_rgb, nrow=4)
-    writer.add_image('recon_%s_rgb' % name, 
-            grid, num_iter)
-    grid = make_grid(outputs_fusion, nrow=4)
-    writer.add_image('recon_%s_fusion' % name, 
-            grid, num_iter)
-
-    writer.flush()
+    rgbs = [wandb.Image(ToPILImage()(img)) for img in rgbs]
+    fusions = [wandb.Image(ToPILImage()(img)) for img in fusions]
+    wandb.log({'%s_rgb' % name: rgbs}, step=num_iter)
+    wandb.log({'%s_fusion' % name: fusions}, step=num_iter)

@@ -30,3 +30,4 @@ gt_valid
 pretrained
 imgnet
 config.system.sh
+wandb
