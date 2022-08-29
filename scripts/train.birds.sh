@@ -2,7 +2,7 @@
 
 source config.system.sh
 
-INDEX_TARGET=$(cat resource/cls_group/birds.txt | sed "s/,/ /g")
+INDEX_TARGET=$(cat resource/cls_group/birds10.txt | sed "s/,/ /g")
 LOSS_TARGETS="mse vgg_per adv"
 NUM_EPOCH=20
 
@@ -12,8 +12,8 @@ CUDA_VISIBLE_DEVICES=$GPUS python -W ignore train.py \
                     --loss_targets $LOSS_TARGETS \
                     --size_batch $SIZE_BATCH \
                     --interval_save_loss 10 \
-                    --interval_save_train 1000 \
-                    --interval_save_test 2000 \
+                    --interval_save_train 100 \
+                    --interval_save_test 200 \
                     --dim_encoder_c 128 \
                     --chunk_size_z_e 0 \
                     --coef_wip 0.02 \
