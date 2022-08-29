@@ -2,7 +2,7 @@
 
 source config.system.sh
 
-INDEX_TARGET=$(cat resource/cls_group/birds.txt)
+INDEX_TARGET=$(cat resource/cls_group/birds.txt | sed "s/,/ /g")
 LOSS_TARGETS="mse vgg_per adv"
 NUM_EPOCH=20
 
