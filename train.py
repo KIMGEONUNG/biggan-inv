@@ -181,14 +181,10 @@ def train(
   EG = Colorizer(
       config,
       args.path_ckpt_g,
-      args.norm_type,
       id_mid_layer=args.num_layer,
-      activation=args.activation,
       fix_g=(not args.finetune_g),
       load_g=(not args.no_pretrained_g),
-      init_e=args.weight_init,
-      dim_f=args.dim_f,
-      dim_encoder_c=args.dim_encoder_c,
+      init_w=args.weight_init,
   )
   EG.train()
   D = models.Discriminator(**config)

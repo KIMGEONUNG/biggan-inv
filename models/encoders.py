@@ -164,20 +164,21 @@ class EncoderF(nn.Module):
 
   def __init__(
       self,
-      dim_in=1,
-      dim_out=768,
-      dim_unit=96,
-      dim_c=128,
-      norm='batch',
-      activation='relu',
-      init='ortho',
-      use_res=[False, True, True, True, True],
+      dim_in=[1, 96 * 1, 96 * 2, 96 * 4, 96 * 8],
+      dim_out=[96 * 1, 96 * 2, 96 * 4, 96 * 8, 96 * 8],
+      dim_c=[128, 128, 128, 128, 128],
+      num_block=5,
+      norm=['batch', 'adabatch', 'adabatch', 'adabatch', 'adabatch'],
+      activation=['relu', 'relu', 'relu', 'relu', 'relu'],
+      downsample=[False, True, True, True, True],
+      conditions=[False, True, True, True, True],
+      respath=[True, True, True, True, True],
       dropout=[None, None, None, None, None],
-      chunk_size_z=0,
+      init_w='ortho',
   ):
     super().__init__()
 
-    self.init = init
+    self.init_w = init_w
 
     kwargs = {}
     if activation == 'lrelu':
@@ -185,61 +186,17 @@ class EncoderF(nn.Module):
 
     blocks = []
 
-    # output is 96 x 256 x 256
-    blocks.append(
-        ConvBlock(dim_in,
-                  dim_unit * 1,
-                  is_down=False,
-                  activation=activation,
-                  norm=norm,
-                  use_res=use_res[0],
-                  dropout=dropout[0],
-                  ch_c=dim_c,
-                  **kwargs))
-    # output is 192 x 128 x 128
-    blocks.append(
-        ConvBlock(dim_unit * 1,
-                  dim_unit * 2,
-                  is_down=True,
-                  activation=activation,
-                  norm=norm,
-                  use_res=use_res[1],
-                  dropout=dropout[1],
-                  ch_c=dim_c,
-                  **kwargs))
-    # output is  384 x 64 x 64
-    blocks.append(
-        ConvBlock(dim_unit * 2,
-                  dim_unit * 4,
-                  is_down=True,
-                  activation=activation,
-                  norm=norm,
-                  use_res=use_res[2],
-                  dropout=dropout[2],
-                  ch_c=dim_c,
-                  **kwargs))
-    # output is  768 x 32 x 32
-    blocks.append(
-        ConvBlock(dim_unit * 4,
-                  dim_unit * 8,
-                  is_down=True,
-                  activation=activation,
-                  norm=norm,
-                  use_res=use_res[3],
-                  dropout=dropout[3],
-                  ch_c=dim_c,
-                  **kwargs))
-    # output is  768 x 16 x 16
-    blocks.append(
-        ConvBlock(dim_unit * 8,
-                  dim_unit * 8,
-                  is_down=True,
-                  activation=activation,
-                  norm=norm,
-                  use_res=use_res[4],
-                  dropout=dropout[4],
-                  ch_c=dim_c,
-                  **kwargs))
+    for i in range(num_block):
+      blocks.append(
+          ConvBlock(dim_in[i],
+                    dim_out[i],
+                    is_down=downsample[i],
+                    activation=activation[i],
+                    norm=norm[i],
+                    use_res=respath[i],
+                    dropout=dropout[i],
+                    ch_c=dim_c[i],
+                    **kwargs))
 
     self.blocks = nn.Sequential(*blocks)
 
@@ -256,11 +213,11 @@ class EncoderF(nn.Module):
     for module in self.modules():
       if (isinstance(module, nn.Conv2d) or isinstance(module, nn.Linear)
           or isinstance(module, nn.Embedding)):
-        if self.init == 'ortho':
+        if self.init_w == 'ortho':
           init.orthogonal_(module.weight)
-        elif self.init == 'N02':
+        elif self.init_w == 'N02':
           init.normal_(module.weight, 0, 0.02)
-        elif self.init in ['glorot', 'xavier']:
+        elif self.init_w in ['glorot', 'xavier']:
           init.xavier_uniform_(module.weight)
         else:
           pass

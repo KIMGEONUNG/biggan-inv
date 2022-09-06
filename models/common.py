@@ -94,27 +94,16 @@ class Colorizer(nn.Module):
       self,
       config,
       path_ckpt_g,
-      norm_type='adabatch',
-      activation='relu',
       id_mid_layer=2,
       fix_g=False,
       load_g=True,
-      init_e=None,
-      dim_f=16,
-      dim_encoder_c=128,
+      init_w=None,
   ):
     super().__init__()
 
     self.id_mid_layer = id_mid_layer
 
-    if dim_f == 16:
-      self.E = EncoderF(norm=norm_type,
-                        activation=activation,
-                        init=init_e,
-                        dim_c=dim_encoder_c)
-      self.id_mid_layer = 2
-    else:
-      raise Exception('In valid dim_f')
+    self.E = EncoderF(init_w=init_w)
 
     # Generator setting
     self.G = Generator(**config)
