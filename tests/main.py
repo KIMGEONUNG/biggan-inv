@@ -44,8 +44,8 @@ if __name__ == '__main__':
     unittest.main()
 
 
-from models import (EncoderF64_Res, EncoderF32_Res, EncoderF_Res, EncoderZ_Res,
-                    Colorizer, ResConvBlock)
+from models import (EncoderF64_Res, EncoderF32_Res, EncoderF, EncoderZ_Res,
+                    Colorizer, ConvBlock)
 import torch
 import re
 
@@ -65,7 +65,7 @@ class Tester():
     @commenter
     def test_ResBlock_1():
         x = torch.randn(4, 6, 256, 256)
-        model = ResConvBlock(6, 10, is_down=True)
+        model = ConvBlock(6, 10, is_down=True)
         model.float()
         y = model(x)
         assert y.shape == torch.Size([4, 10, 128, 128])
@@ -73,7 +73,7 @@ class Tester():
     @commenter
     def test_ResBlock_2():
         x = torch.randn(4, 6, 256, 256)
-        model = ResConvBlock(6, 10, is_down=True, use_res=False)
+        model = ConvBlock(6, 10, is_down=True, use_res=False)
         model.float()
         y = model(x)
         assert y.shape == torch.Size([4, 10, 128, 128])
@@ -89,7 +89,7 @@ class Tester():
     @commenter
     def test_EncoderF16():
         x = torch.randn(4, 1, 256, 256)
-        model = EncoderF_Res()
+        model = EncoderF()
         model.float()
         y = model(x)
         assert y.shape == torch.Size([4, 768, 16, 16])

@@ -45,9 +45,7 @@ def args4model(parser):
                       choices=['xavier', 'N02', 'ortho', ''])
   parser.add_argument('--dim_z', type=int, default=119)
 
-  parser.add_argument('--use_attention', action='store_true')
   parser.add_argument('--dim_f', type=int, default=16)
-  parser.add_argument('--no_res', action='store_true')
   parser.add_argument('--no_cond_e', action='store_true')
   parser.add_argument('--chunk_size_z_e', type=int, default=0)
   parser.add_argument('--dim_encoder_c', type=int, default=128)
@@ -189,8 +187,6 @@ def train(
       fix_g=(not args.finetune_g),
       load_g=(not args.no_pretrained_g),
       init_e=args.weight_init,
-      use_attention=args.use_attention,
-      use_res=(not args.no_res),
       dim_f=args.dim_f,
       dim_encoder_c=args.dim_encoder_c,
   )

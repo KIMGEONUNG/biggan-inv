@@ -1,9 +1,13 @@
-from models import Generator, Colorizer
+from models import Generator, Colorizer, EncoderF
 import pickle
 import torch
 from torch_ema import ExponentialMovingAverage
 from representation import RGBuvHistBlock
 
+model = EncoderF()
+print(model)
+
+exit()
 
 with open('./pretrained/config.pickle', 'rb') as f:
     config = pickle.load(f)

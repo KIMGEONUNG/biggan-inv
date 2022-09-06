@@ -5,7 +5,7 @@ from typing import List, Callable
 from hashlib import sha256
 from os.path import join
 
-from models import (ResConvBlock, EncoderF_Res, Colorizer)
+from models import (ConvBlock, EncoderF, Colorizer)
 from global_config import LEN_HASH
 
 import inspect
@@ -25,7 +25,7 @@ def v001():
     print(name, 'started')
     id_code = sha256(name.encode('utf-8')).hexdigest()[:LEN_HASH]
 
-    model = ResConvBlock(6, 10, is_down=True)
+    model = ConvBlock(6, 10, is_down=True)
     model.eval()
     saver(inputs=[torch.randn(4, 6, 256, 256)],
           model=model,
@@ -40,7 +40,7 @@ def v002():
     print(name, 'started')
     id_code = sha256(name.encode('utf-8')).hexdigest()[:LEN_HASH]
 
-    model = ResConvBlock(6, 10, is_down=True, use_res=False)
+    model = ConvBlock(6, 10, is_down=True, use_res=False)
     model.eval()
     saver(inputs=[torch.randn(4, 6, 256, 256)],
           model=model,
@@ -55,7 +55,7 @@ def v003():
     print(name, 'started')
     id_code = sha256(name.encode('utf-8')).hexdigest()[:LEN_HASH]
 
-    model = EncoderF_Res()
+    model = EncoderF()
     model.eval()
 
     saver(inputs=[torch.randn(4, 1, 256, 256)],
@@ -70,7 +70,7 @@ def v004():
     print(name, 'started')
     id_code = sha256(name.encode('utf-8')).hexdigest()[:LEN_HASH]
 
-    model = EncoderF_Res(norm='adabatch')
+    model = EncoderF(norm='adabatch')
     model.eval()
 
     saver(inputs=[torch.randn(4, 1, 256, 256), torch.randn(4, 128)],
@@ -86,7 +86,7 @@ def v005():
     print(name, 'started')
     id_code = sha256(name.encode('utf-8')).hexdigest()[:LEN_HASH]
 
-    model = EncoderF_Res(norm='adabatch', dim_c=77)
+    model = EncoderF(norm='adabatch', dim_c=77)
     model.eval()
 
     saver(inputs=[torch.randn(4, 1, 256, 256), torch.randn(4, 77)],
@@ -125,7 +125,7 @@ def v007():
     print(name, 'started')
     id_code = sha256(name.encode('utf-8')).hexdigest()[:LEN_HASH]
 
-    model = EncoderF_Res(norm='adabatch', dim_c=60, chunk_size_z=10)
+    model = EncoderF(norm='adabatch', dim_c=60, chunk_size_z=10)
     model.eval()
 
     saver(inputs=[torch.randn(4, 1, 256, 256), torch.randn(4, 50), torch.randn(4, 50)],

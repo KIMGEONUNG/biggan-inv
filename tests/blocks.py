@@ -1,6 +1,6 @@
 import unittest
 from unittest import TestCase
-from models import ResConvBlock
+from models import ConvBlock
 import torch
 from hashlib import sha256
 from global_config import PATH_STORAGE, LEN_HASH
@@ -19,7 +19,7 @@ class Tester(TestCase):
         x = torch.load(join(PATH_STORAGE, '%s_input_0') % id_code)
         output = torch.load(join(PATH_STORAGE, '%s_output_0') % id_code)
 
-        model = ResConvBlock(6, 10, is_down=True, use_res=True)
+        model = ConvBlock(6, 10, is_down=True, use_res=True)
         model.eval()
         name_model = type(model).__name__
         model.load_state_dict(
@@ -36,7 +36,7 @@ class Tester(TestCase):
         x = torch.load(join(PATH_STORAGE, '%s_input_0') % id_code)
         output = torch.load(join(PATH_STORAGE, '%s_output_0') % id_code)
 
-        model = ResConvBlock(6, 10, is_down=True, use_res=False)
+        model = ConvBlock(6, 10, is_down=True, use_res=False)
         model.eval()
         name_model = type(model).__name__
         model.load_state_dict(
