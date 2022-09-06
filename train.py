@@ -21,7 +21,8 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from utils.losses import loss_fn_d, loss_fn_g
-from utils.common_utils import (extract_sample, set_seed, prepare_dataset)
+from utils.common_utils import (extract_sample, set_seed, prepare_dataset,
+                                mk_hint)
 from utils.logger import (make_log_img, make_log_ckpt, load_for_retrain,
                           load_for_retrain_EMA)
 from utils.common_utils import color_enhacne_blend
@@ -271,13 +272,16 @@ def train(
 
       x_g, x, c = x_g.to(dev), x.to(dev), c.to(dev)
 
+      x_hint = mk_hint(x)
+      x_input = torch.cat([x_g, x_hint], dim=-3)
+
       # Sample z
       z_g = torch.zeros((args.size_batch, args.dim_z)).to(dev)
       z_g.normal_(mean=args.mu_z, std=args.std_z)
 
       # Generate fake image
       with autocast():
-        fake = EG(x_g, c, z_g)
+        fake = EG(x_input, c, z_g)
 
       # DISCRIMINATOR
       x_real = x

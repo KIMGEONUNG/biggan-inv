@@ -164,7 +164,7 @@ class EncoderF(nn.Module):
 
   def __init__(
       self,
-      dim_in=[1, 96 * 1, 96 * 2, 96 * 4, 96 * 8],
+      dim_in=[4, 96 * 1, 96 * 2, 96 * 4, 96 * 8],
       dim_out=[96 * 1, 96 * 2, 96 * 4, 96 * 8, 96 * 8],
       dim_c=[128, 128, 128, 128, 128],
       num_block=5,
