@@ -151,8 +151,10 @@ def make_grid_multi(xs, nrow=4):
   return make_grid(torch.cat(xs, dim=0), nrow=nrow)
 
 
-def mk_hint(x: torch.Tensor, size_patch=5, num_patch=20):
-  mask = torch.zeros_like(x)
+def mk_hint(x: torch.Tensor, size_patch=5, num_patch=20,
+            colorspace='lab', use_mask=True):
+  hint = torch.zeros_like(x)
+  mask = torch.zeros_like(x)[..., :1, :, :]
   h, w = x.shape[-2:]
 
   for i in range(num_patch):
@@ -161,7 +163,17 @@ def mk_hint(x: torch.Tensor, size_patch=5, num_patch=20):
 
     patch = x[..., coord_h:coord_h + size_patch, coord_w:coord_w + size_patch]
     patch = patch.mean(dim=(-1, -2), keepdim=True)
-    mask[..., coord_h:coord_h + size_patch,
+
+    hint[..., coord_h:coord_h + size_patch,
          coord_w:coord_w + size_patch] = patch
 
-  return mask
+    mask[..., coord_h:coord_h + size_patch,
+         coord_w:coord_w + size_patch] = 1.0
+
+  if colorspace == 'lab':
+    hint = rgb2lab(hint)[..., 1:, :, :] / 110
+  
+  if use_mask:
+    hint = torch.cat([hint, mask], dim=-3)
+
+  return hint
