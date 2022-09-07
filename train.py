@@ -358,6 +358,7 @@ def train(
 
     # Save Model
     if is_main_dev and not args.no_save:
+      print('save model')
       make_log_ckpt(EG=EG.module,
                     D=D.module,
                     optim_g=optimizer_g,
@@ -373,6 +374,8 @@ def train(
     if args.use_schedule:
       scheduler_d.step(epoch)
       scheduler_g.step(epoch)
+
+  wandb.finish()
 
 
 def main():
