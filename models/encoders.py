@@ -168,7 +168,7 @@ class EncoderF(nn.Module):
       dim_out=[96 * 1, 96 * 2, 96 * 4, 96 * 8, 96 * 8],
       dim_c=[128, 128, 128, 128, 128],
       num_block=5,
-      norm=['batch', 'adabatch', 'adabatch', 'adabatch', 'adabatch'],
+      norm=['adabatch', 'adabatch', 'adabatch', 'adabatch', 'adabatch'],
       activation=['relu', 'relu', 'relu', 'relu', 'relu'],
       downsample=[False, True, True, True, True],
       conditions=[False, True, True, True, True],
