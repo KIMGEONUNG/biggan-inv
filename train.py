@@ -418,8 +418,9 @@ def main():
   # DATASETS
   prep = transforms.Compose([
       ToTensor(),
-      transforms.Resize(256),
-      transforms.CenterCrop(256),
+      transforms.RandomCrop(256),
+      # transforms.Resize(256),
+      # transforms.CenterCrop(256),
   ])
 
   dataset, dataset_val = prepare_dataset(args.path_imgnet_train,
