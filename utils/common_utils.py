@@ -60,7 +60,7 @@ def copy_buff(m_from: nn.Module, m_to: nn.Module):
     v2.copy_(v1)
 
 
-def extract(dataset, target_ids):
+def filter_dataset(dataset, target_ids):
   '''
     extract data element based on class index
     '''
@@ -81,10 +81,10 @@ def prepare_dataset(path_train,
                     ])):
 
   dataset = GrayGTPairDataset(path_train, transform=prep)
-  dataset = extract(dataset, index_target)
+  dataset = filter_dataset(dataset, index_target)
 
   dataset_val = GrayGTPairDataset(path_valid, transform=prep)
-  dataset_val = extract(dataset_val, index_target)
+  dataset_val = filter_dataset(dataset_val, index_target)
   return dataset, dataset_val
 
 
