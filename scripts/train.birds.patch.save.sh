@@ -8,7 +8,7 @@ NUM_EPOCH=20
 
 CUDA_VISIBLE_DEVICES=$GPUS python -W ignore train.py \
                     --vgg_target_layers 1 2 13 20 \
-                    --path_ckpts "/root/bigcolor" \
+                    --path_ckpts "/root/log/bigcolor" \
                     --loss_targets $LOSS_TARGETS \
                     --size_batch $SIZE_BATCH \
                     --interval_save_loss 10 \
