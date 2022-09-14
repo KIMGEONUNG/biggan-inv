@@ -130,7 +130,7 @@ def args4io(parser):
   parser.add_argument('--path_ckpt_g', default='./pretrained/G_ema_256.pth')
   parser.add_argument('--path_ckpt_d', default='./pretrained/D_256.pth')
   parser.add_argument('--path_imgnet_train', default='./imgnet/train')
-  parser.add_argument('--path_imgnet_val', default='./imgnet/val')
+  parser.add_argument('--path_imgnet_valid', default='./imgnet/valid')
 
   parser.add_argument('--no_save', action='store_true')
 
@@ -424,7 +424,7 @@ def main():
   ])
 
   dataset, dataset_val = prepare_dataset(args.path_imgnet_train,
-                                         args.path_imgnet_val,
+                                         args.path_imgnet_valid,
                                          args.index_target,
                                          prep=prep)
 
