@@ -21,8 +21,8 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from utils.losses import loss_fn_d, loss_fn_g
-from utils.common_utils import (extract_sample, set_seed, prepare_dataset)
-from utils.logger import (make_log_img, make_log_ckpt, load_for_retrain,
+from utils.common_utils import (set_seed, prepare_dataset)
+from utils.logger import (make_log_img_each, make_log_ckpt, load_for_retrain,
                           load_for_retrain_EMA)
 from utils.common_utils import color_enhacne_blend
 import utils
@@ -118,12 +118,8 @@ def args4log(parser):
   parser.add_argument('--interval_save_train', type=int, default=150)
   parser.add_argument('--interval_save_test', type=int, default=200)
 
-  parser.add_argument('--num_test_sample', type=int, default=16)
-  parser.add_argument('--num_row_grid', type=int, default=4)
-
 
 def args4io(parser):
-  parser.add_argument('--path_log', default='runs')
   parser.add_argument('--path_ckpts', default='ckpts')
   parser.add_argument('--path_config', default='./pretrained/config.pickle')
   parser.add_argument('--path_vgg', default='./pretrained/vgg16.pickle')
@@ -164,11 +160,9 @@ def train(
     world_size,
     config,
     args,
-    dataset=None,
-    sample_train=None,
-    sample_valid=None,
+    trainset=None,
+    validset=None,
     path_ckpts=None,
-    path_log=None,
 ):
 
   is_main_dev = dev == 0
@@ -246,8 +240,8 @@ def train(
   vgg_per = DDP(vgg_per, device_ids=[dev], find_unused_parameters=True)
 
   # Datasets
-  sampler = DistributedSampler(dataset)
-  dataloader = DataLoader(dataset,
+  sampler = DistributedSampler(trainset)
+  dataloader = DataLoader(trainset,
                           batch_size=args.size_batch,
                           shuffle=True if sampler is None else False,
                           sampler=sampler,
@@ -280,8 +274,7 @@ def train(
         fake = EG(x_g, c, z_g)
 
       # DISCRIMINATOR
-      x_real = x
-      c_real = c
+      x_real, c_real = x, c
 
       if args.use_enhance:
         x_real = color_enhance(x)
@@ -328,24 +321,15 @@ def train(
           # Commit loss data
           wandb.log(loss_dict, step=num_iter)
 
-        if num_iter % args.interval_save_train == 0:
-          make_log_img(EG,
-                       args.dim_z,
-                       args,
-                       sample_train,
-                       dev,
-                       num_iter,
-                       'train',
-                       ema=ema_g)
         if num_iter % args.interval_save_test == 0:
-          make_log_img(EG,
-                       args.dim_z,
-                       args,
-                       sample_valid,
-                       dev,
-                       num_iter,
-                       'valid',
-                       ema=ema_g)
+          make_log_img_each(model=EG,
+                            dim_z=args.dim_z,
+                            args=args,
+                            samples=validset,
+                            dev=dev,
+                            num_iter=num_iter,
+                            name='valid',
+                            ema=ema_g)
 
       if num_iter % args.interval_save_loss == 0:
         loss_dict.clear()
@@ -355,7 +339,7 @@ def train(
     # Save Model
     if is_main_dev and not args.no_save:
       print('save model')
-      make_log_ckpt(EG=EG.module,
+      make_log_ckpt(model=EG.module,
                     D=D.module,
                     optim_g=optimizer_g,
                     optim_d=optimizer_d,
@@ -411,39 +395,23 @@ def main():
   with open(join(path_ckpts, 'args.pkl'), 'wb') as f:
     pickle.dump(args, f)
 
-  # Logger
-  path_log = join(args.path_log, args.task_name)
-  print('logger name:', path_log)
-
   # DATASETS
   prep = transforms.Compose([
       ToTensor(),
       transforms.RandomCrop(256),
-      # transforms.Resize(256),
-      # transforms.CenterCrop(256),
   ])
 
-  dataset, dataset_val = prepare_dataset(args.path_imgnet_train,
-                                         args.path_imgnet_valid,
-                                         args.index_target,
-                                         prep=prep)
+  trainset, validset = prepare_dataset(args.path_imgnet_train,
+                                       args.path_imgnet_valid,
+                                       args.index_target,
+                                       prep_train=prep)
 
-  is_shuffle = True
   args.size_batch = int(args.size_batch / num_gpu)
-  sample_train = extract_sample(dataset,
-                                args.num_test_sample,
-                                is_shuffle,
-                                pin_memory=False)
-  sample_valid = extract_sample(dataset_val,
-                                args.num_test_sample,
-                                is_shuffle,
-                                pin_memory=False)
 
   mp.spawn(train,
-           args=(num_gpu, config, args, dataset, sample_train, sample_valid,
-                 path_ckpts, path_log),
+           args=(num_gpu, config, args, trainset, validset, path_ckpts),
            nprocs=num_gpu)
 
 
 if __name__ == '__main__':
- main()
+  main()

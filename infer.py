@@ -16,6 +16,7 @@ from tqdm import tqdm
 from torch_ema import ExponentialMovingAverage
 from utils.common_utils import set_seed, rgb2lab, lab2rgb
 from pycomar.datasets import IMAGENET_INDEX
+from pycomar.images.colorspace import fuse_luma_chroma
 from PIL import Image
 import timm
 from math import ceil
@@ -164,7 +165,7 @@ def main(args):
     if args.use_rgb:
       x_img = output
     else:
-      x_img = fusion(x_rs, output)
+      x_img = fuse_luma_chroma(x_rs, output)
     im = ToPILImage()(x_img)
 
     name = path.split('/')[-1].split('.')[0]
@@ -172,14 +173,6 @@ def main(args):
 
     path_out = join(args.path_output, name)
     im.save(path_out)
-
-
-def fusion(img_gray, img_rgb):
-  img_gray *= 100
-  ab = rgb2lab(img_rgb)[..., 1:, :, :]
-  lab = torch.cat([img_gray, ab], dim=0)
-  rgb = lab2rgb(lab)
-  return rgb
 
 
 if __name__ == '__main__':

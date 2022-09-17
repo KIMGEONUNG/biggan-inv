@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Subset
 import torchvision.transforms as transforms
-from torchvision.transforms import ToTensor, Grayscale
+from torchvision.transforms import ToTensor, Grayscale, Resize
+from math import ceil
 from torchvision.utils import make_grid
 from torch.utils.data import DataLoader
 import numpy as np
@@ -75,34 +76,19 @@ def filter_dataset(dataset, target_ids):
 def prepare_dataset(path_train,
                     path_valid,
                     index_target,
-                    prep=transforms.Compose([
-                        ToTensor(),
-                        transforms.Resize(256),
-                        transforms.CenterCrop(256),
-                    ])):
+                    prep_train,
+                    prep_valid=ToTensor()):
 
   dataset = ImageNetIndexDataset(path_train,
-                                 transform=prep,
+                                 transform=prep_train,
                                  post_processings=[Grayscale()])
   dataset = filter_dataset(dataset, index_target)
 
   dataset_val = ImageNetIndexDataset(path_valid,
-                                     transform=prep,
+                                     transform=prep_valid,
                                      post_processings=[Grayscale()])
   dataset_val = filter_dataset(dataset_val, index_target)
   return dataset, dataset_val
-
-
-def extract_sample(dataset, num_sample, is_shuffle, pin_memory=True):
-  dataloader = DataLoader(dataset,
-                          batch_size=num_sample,
-                          shuffle=is_shuffle,
-                          num_workers=4,
-                          pin_memory=pin_memory,
-                          drop_last=True)
-
-  x, x_g, c = next(iter(dataloader))
-  return {'xs': x, 'cs': c, 'x_gs': x_g}
 
 
 def lab_fusion(x_l, x_ab):
@@ -184,3 +170,17 @@ def mk_hint(x: torch.Tensor,
     hint = torch.cat([hint, mask], dim=-3)
 
   return hint
+ 
+
+def resizer3unit(x, unit):
+  width = x.shape[-2]
+  hight = x.shape[-1]
+
+  unit_w = ceil(width / unit)
+  unit_h = ceil(hight / unit)
+
+  width_n = unit_w * unit
+  hight_n = unit_h * unit
+  x_hat = Resize((width_n, hight_n))(x)
+
+  return x_hat
