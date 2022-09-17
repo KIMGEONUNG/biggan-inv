@@ -5,8 +5,12 @@ source config.system.sh
 INDEX_TARGET=$(echo {0..999})
 LOSS_TARGETS="mse vgg_per adv"
 NUM_EPOCH=12
+PATH_TRAIN=${PATH_TRAIN:-imgnet/train}
+PATH_VALID=${PATH_VALID:-imgnet/valid}
 
 CUDA_VISIBLE_DEVICES=$GPUS python -W ignore train.py \
+                    --path_imgnet_train ${PATH_TRAIN} \
+                    --path_imgnet_valid ${PATH_VALID} \
                     --vgg_target_layers 1 2 13 20 \
                     --no_save \
                     --loss_targets $LOSS_TARGETS \
