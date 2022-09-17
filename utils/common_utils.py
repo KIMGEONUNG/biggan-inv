@@ -9,6 +9,7 @@ import numpy as np
 from skimage import color
 from .color_models import rgb2lab, lab2rgb
 from .dataset_utils import GrayGTPairDataset
+from pycomar.datasets import ImageNetIndexDataset
 from random import randint
 
 LAYER_DIM = {
@@ -80,10 +81,14 @@ def prepare_dataset(path_train,
                         transforms.CenterCrop(256),
                     ])):
 
-  dataset = GrayGTPairDataset(path_train, transform=prep)
+  dataset = ImageNetIndexDataset(path_train,
+                                 transform=prep,
+                                 post_processings=[Grayscale()])
   dataset = filter_dataset(dataset, index_target)
 
-  dataset_val = GrayGTPairDataset(path_valid, transform=prep)
+  dataset_val = ImageNetIndexDataset(path_valid,
+                                     transform=prep,
+                                     post_processings=[Grayscale()])
   dataset_val = filter_dataset(dataset_val, index_target)
   return dataset, dataset_val
 
@@ -96,7 +101,7 @@ def extract_sample(dataset, num_sample, is_shuffle, pin_memory=True):
                           pin_memory=pin_memory,
                           drop_last=True)
 
-  x_g, x, c = next(iter(dataloader))
+  x, x_g, c = next(iter(dataloader))
   return {'xs': x, 'cs': c, 'x_gs': x_g}
 
 

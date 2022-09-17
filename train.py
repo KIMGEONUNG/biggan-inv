@@ -266,7 +266,7 @@ def train(
 
     tbar = tqdm(dataloader)
     tbar.set_description('epoch: %03d' % epoch)
-    for i, (x_g, x, c) in enumerate(tbar):
+    for i, (x, x_g, c) in enumerate(tbar):
       EG.train()
 
       x_g, x, c = x_g.to(dev), x.to(dev), c.to(dev)
