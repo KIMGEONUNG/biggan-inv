@@ -1,18 +1,17 @@
 import torch
 from os.path import join
-from .common_utils import lab_fusion, mk_hint
-from statistics import mean
-from torchvision.utils import make_grid
-from torchvision.transforms import ToPILImage
+from .common_utils import lab_fusion, resizer3unit
+from torchvision.transforms import ToPILImage, Resize
 import wandb
+from pycomar.images.colorspace import fuse_luma_chroma
 
 
-def make_log_ckpt(EG, D, optim_g, optim_d, schedule_g, schedule_d, ema_g,
+def make_log_ckpt(model, D, optim_g, optim_d, schedule_g, schedule_d, ema_g,
                   num_iter, args, epoch, path_ckpts):
   # Encoder&Generator
   name = 'EG_%03d.ckpt' % epoch
   path = join(path_ckpts, name)
-  torch.save(EG.state_dict(), path)
+  torch.save(model.state_dict(), path)
 
   # Discriminator
   name = 'D_%03d.ckpt' % epoch
@@ -71,7 +70,45 @@ def load_for_retrain_EMA(ema_g, epoch, path_ckpts, dev):
   ema_g.load_state_dict(state)
 
 
-def make_log_img(EG, dim_z, args, sample, dev, num_iter, name, ema=None):
+def make_log_img_each(model, dim_z, args, samples, dev, num_iter, name, ema):
+  rgbs = []
+  fusions = []
+
+  model.eval()
+
+  for x, x_g, c in samples:
+    x_g = x_g.unsqueeze(0).to(dev)
+    c = torch.LongTensor([c]).to(dev)
+    z = torch.zeros((1, dim_z)).to(dev)
+    z.normal_(mean=args.mu_z, std=args.std_z)
+
+    x_g_resized = resizer3unit(x_g, 2**4)
+    with torch.no_grad():
+      with ema.average_parameters():
+        output = model(x_g_resized, c, z)
+      output = output.add(1).div(2).detach().cpu()
+
+    output = Resize(x.shape[-2:])(output).squeeze()
+    x_g = x_g.squeeze(0).detach().cpu()
+    output_fusion = fuse_luma_chroma(x_g, output)
+
+    rgbs.append(output)
+    fusions.append(output_fusion)
+
+  rgbs = [wandb.Image(ToPILImage()(img)) for img in rgbs]
+  fusions = [wandb.Image(ToPILImage()(img)) for img in fusions]
+  wandb.log({'%s_rgb' % name: rgbs}, step=num_iter)
+  wandb.log({'%s_fusion' % name: fusions}, step=num_iter)
+
+
+def make_log_img_batch(model,
+                       dim_z,
+                       args,
+                       sample,
+                       dev,
+                       num_iter,
+                       name,
+                       ema=None):
   rgbs = []
   fusions = []
   batch_size = args.size_batch
@@ -83,7 +120,7 @@ def make_log_img(EG, dim_z, args, sample, dev, num_iter, name, ema=None):
   zs = torch.zeros((xs.shape[0], dim_z))
   zs.normal_(mean=args.mu_z, std=args.std_z)
 
-  EG.eval()
+  model.eval()
 
   for i in range(len(xs) // batch_size):
     z = zs[batch_size * i:batch_size * (i + 1), ...]
@@ -91,12 +128,13 @@ def make_log_img(EG, dim_z, args, sample, dev, num_iter, name, ema=None):
     c = cs[batch_size * i:batch_size * (i + 1), ...]
     x_g = x_gs[batch_size * i:batch_size * (i + 1), ...]
     z, c, x_g = z.to(dev), c.to(dev), x_g.to(dev)
-    x_hint = mk_hint(x).to(dev)
-    x_input = torch.cat([x_g, x_hint], dim=-3)
 
     with torch.no_grad():
-      with ema.average_parameters():
-        output = EG(x_input, c, z)
+      if ema is None:
+        output = model(x_g, c, z)
+      else:
+        with ema.average_parameters():
+          output = model(x_g, c, z)
       output = output.add(1).div(2).detach().cpu()
 
     output_fusion = lab_fusion(x, output)

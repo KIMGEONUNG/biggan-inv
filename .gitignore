@@ -31,3 +31,5 @@ pretrained
 imgnet
 config.system.sh
 wandb
+tmp.py
+samples

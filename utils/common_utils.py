@@ -2,13 +2,15 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Subset
 import torchvision.transforms as transforms
-from torchvision.transforms import ToTensor, Grayscale
+from torchvision.transforms import ToTensor, Grayscale, Resize
+from math import ceil
 from torchvision.utils import make_grid
 from torch.utils.data import DataLoader
 import numpy as np
 from skimage import color
 from .color_models import rgb2lab, lab2rgb
 from .dataset_utils import GrayGTPairDataset
+from pycomar.datasets import ImageNetIndexDataset
 from random import randint
 
 LAYER_DIM = {
@@ -60,7 +62,7 @@ def copy_buff(m_from: nn.Module, m_to: nn.Module):
     v2.copy_(v1)
 
 
-def extract(dataset, target_ids):
+def filter_dataset(dataset, target_ids):
   '''
     extract data element based on class index
     '''
@@ -74,30 +76,19 @@ def extract(dataset, target_ids):
 def prepare_dataset(path_train,
                     path_valid,
                     index_target,
-                    prep=transforms.Compose([
-                        ToTensor(),
-                        transforms.Resize(256),
-                        transforms.CenterCrop(256),
-                    ])):
+                    prep_train,
+                    prep_valid=ToTensor()):
 
-  dataset = GrayGTPairDataset(path_train, transform=prep)
-  dataset = extract(dataset, index_target)
+  dataset = ImageNetIndexDataset(path_train,
+                                 transform=prep_train,
+                                 post_processings=[Grayscale()])
+  dataset = filter_dataset(dataset, index_target)
 
-  dataset_val = GrayGTPairDataset(path_valid, transform=prep)
-  dataset_val = extract(dataset_val, index_target)
+  dataset_val = ImageNetIndexDataset(path_valid,
+                                     transform=prep_valid,
+                                     post_processings=[Grayscale()])
+  dataset_val = filter_dataset(dataset_val, index_target)
   return dataset, dataset_val
-
-
-def extract_sample(dataset, num_sample, is_shuffle, pin_memory=True):
-  dataloader = DataLoader(dataset,
-                          batch_size=num_sample,
-                          shuffle=is_shuffle,
-                          num_workers=4,
-                          pin_memory=pin_memory,
-                          drop_last=True)
-
-  x_g, x, c = next(iter(dataloader))
-  return {'xs': x, 'cs': c, 'x_gs': x_g}
 
 
 def lab_fusion(x_l, x_ab):
@@ -151,8 +142,11 @@ def make_grid_multi(xs, nrow=4):
   return make_grid(torch.cat(xs, dim=0), nrow=nrow)
 
 
-def mk_hint(x: torch.Tensor, size_patch=5, num_patch=20,
-            colorspace='lab', use_mask=True):
+def mk_hint(x: torch.Tensor,
+            size_patch=5,
+            num_patch=20,
+            colorspace='lab',
+            use_mask=True):
   hint = torch.zeros_like(x)
   mask = torch.zeros_like(x)[..., :1, :, :]
   h, w = x.shape[-2:]
@@ -167,13 +161,26 @@ def mk_hint(x: torch.Tensor, size_patch=5, num_patch=20,
     hint[..., coord_h:coord_h + size_patch,
          coord_w:coord_w + size_patch] = patch
 
-    mask[..., coord_h:coord_h + size_patch,
-         coord_w:coord_w + size_patch] = 1.0
+    mask[..., coord_h:coord_h + size_patch, coord_w:coord_w + size_patch] = 1.0
 
   if colorspace == 'lab':
     hint = rgb2lab(hint)[..., 1:, :, :] / 110
-  
+
   if use_mask:
     hint = torch.cat([hint, mask], dim=-3)
 
   return hint
+ 
+
+def resizer3unit(x, unit):
+  width = x.shape[-2]
+  hight = x.shape[-1]
+
+  unit_w = ceil(width / unit)
+  unit_h = ceil(hight / unit)
+
+  width_n = unit_w * unit
+  hight_n = unit_h * unit
+  x_hat = Resize((width_n, hight_n))(x)
+
+  return x_hat
