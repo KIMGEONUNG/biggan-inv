@@ -1,6 +1,6 @@
 import torch
 from os.path import join
-from .common_utils import lab_fusion, resizer3unit
+from .common_utils import lab_fusion, resizer3unit, mk_hint
 from torchvision.transforms import ToPILImage, Resize
 import wandb
 from pycomar.images.colorspace import fuse_luma_chroma
@@ -68,6 +68,72 @@ def load_for_retrain_EMA(ema_g, epoch, path_ckpts, dev):
   path = join(path_ckpts, name)
   state = torch.load(path, map_location=dev)
   ema_g.load_state_dict(state)
+
+
+def make_log_img_each_hint(model, dim_z, args, samples, dev, num_iter, name, ema):
+  """
+  This is logging for user hint version. The logging is divided 
+  into three parts: RGB results using hint, fusion results using hint, and
+  fusion results without hint.
+  """
+  rgbs_hint = []
+  rgbs_no_hint = []
+  fusions_hint = []
+  fusions_no_hint = []
+
+  model.eval()
+
+  for x, x_g, c in samples:
+    shape_original = x.shape[-2:]
+
+    x = x.unsqueeze(0).to(dev)
+    x_g = x_g.unsqueeze(0).to(dev)
+
+    c = torch.LongTensor([c]).to(dev)
+
+    z = torch.zeros((1, dim_z)).to(dev)
+    z.normal_(mean=args.mu_z, std=args.std_z)
+
+    x_resized = resizer3unit(x, 2 ** 4)
+    x_g_resized = resizer3unit(x_g, 2 ** 4)
+
+    x_hint = mk_hint(x_resized)
+    x_hint_e = mk_hint(x_resized, num_patch=0)
+
+    x_input = torch.cat([x_g_resized, x_hint], dim=-3)
+    x_input_e = torch.cat([x_g_resized, x_hint_e], dim=-3)
+
+    with torch.no_grad(), ema.average_parameters():
+      output = model(x_input, c, z)
+      output = output.add(1).div(2).detach().cpu()
+
+      output_e = model(x_input_e, c, z)
+      output_e = output_e.add(1).div(2).detach().cpu()
+
+    x_g = x_g.squeeze(0).detach().cpu()
+
+    output = Resize(shape_original)(output).squeeze()
+    rgbs_hint.append(output)
+    output_fusion = fuse_luma_chroma(x_g, output)
+    # print(x_g)
+    fusions_hint.append(output_fusion)
+
+    output_e = Resize(shape_original)(output_e).squeeze()
+    rgbs_no_hint.append(output_e)
+    output_e_fusion = fuse_luma_chroma(x_g, output_e)
+    # print(x_g)
+    fusions_no_hint.append(output_e_fusion)
+
+  rgbs_hint = [wandb.Image(ToPILImage()(img)) for img in rgbs_hint]
+  fusions_hint = [wandb.Image(ToPILImage()(img)) for img in fusions_hint]
+
+  rgbs_no_hint = [wandb.Image(ToPILImage()(img)) for img in rgbs_no_hint]
+  fusions_no_hint = [wandb.Image(ToPILImage()(img)) for img in fusions_no_hint]
+
+  wandb.log({'%s_rgb' % name: rgbs_hint}, step=num_iter)
+  wandb.log({'%s_fusion' % name: fusions_hint}, step=num_iter)
+  wandb.log({'%s_rgb_no_hint' % name: rgbs_no_hint}, step=num_iter)
+  wandb.log({'%s_fusion_no_hint' % name: fusions_no_hint}, step=num_iter)
 
 
 def make_log_img_each(model, dim_z, args, samples, dev, num_iter, name, ema):

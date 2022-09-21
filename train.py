@@ -11,7 +11,6 @@ from torch.utils.data.distributed import DistributedSampler
 import pickle
 import argparse
 import torchvision.transforms as transforms
-from torchvision.utils import make_grid
 from torchvision.transforms import ToTensor
 from tqdm import tqdm
 
@@ -22,7 +21,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from utils.losses import loss_fn_d, loss_fn_g
 from utils.common_utils import (set_seed, prepare_dataset, mk_hint)
-from utils.logger import (make_log_img_each, make_log_ckpt, load_for_retrain,
+from utils.logger import (make_log_img_each_hint, make_log_ckpt, load_for_retrain,
                           load_for_retrain_EMA)
 from utils.common_utils import color_enhacne_blend
 import utils
@@ -325,7 +324,7 @@ def train(
           wandb.log(loss_dict, step=num_iter)
 
         if num_iter % args.interval_save_test == 0:
-          make_log_img_each(model=EG,
+          make_log_img_each_hint(model=EG,
                             dim_z=args.dim_z,
                             args=args,
                             samples=validset,
@@ -399,15 +398,21 @@ def main():
     pickle.dump(args, f)
 
   # DATASETS
-  prep = transforms.Compose([
+  prep_train = transforms.Compose([
       ToTensor(),
-      transforms.RandomCrop(256),
+      transforms.Resize(256),
+      transforms.CenterCrop(256),
+  ])
+  prep_valid = transforms.Compose([
+      ToTensor(),
+      transforms.Resize(256),
   ])
 
   trainset, validset = prepare_dataset(args.path_imgnet_train,
                                        args.path_imgnet_valid,
                                        args.index_target,
-                                       prep_train=prep)
+                                       prep_train=prep_train,
+                                       prep_valid=prep_valid)
 
   args.size_batch = int(args.size_batch / num_gpu)
 
