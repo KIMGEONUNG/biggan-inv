@@ -11,10 +11,10 @@ def enroll_loss(name, loss, loss_dict):
     loss_dict[name] = [loss] if name not in keys else loss_dict[name] + [loss]
 
 
-def loss_fn_d(D, c, real, fake, loss_dict):
+def loss_fn_d(D, c, real, fake, loss_dict, hint):
     real = (real - 0.5) * 2
-    critic_real, _ = D(real, c)
-    critic_fake, _ = D(fake, c)
+    critic_real, _ = D(real, c, hint)
+    critic_fake, _ = D(fake, c, hint)
     d_loss_real, d_loss_fake = loss_hinge_dis(critic_fake, critic_real)
     loss_d = (d_loss_real + d_loss_fake) / 2  
     
@@ -23,10 +23,10 @@ def loss_fn_d(D, c, real, fake, loss_dict):
     return loss_d
 
 
-def loss_fn_g(D, x, c, args, fake, vgg_per, loss_dict, dev=None):
+def loss_fn_g(D, x, c, args, fake, vgg_per, loss_dict, hint, dev=None):
     loss = 0
     if 'adv' in args.loss_targets:
-        critic, _ = D(fake, c)
+        critic, _ = D(fake, c, hint)
         loss_g = loss_hinge_gen(critic) * args.coef_adv
         loss += loss_g 
         enroll_loss('loss_adv_g', loss_g.item(), loss_dict)

@@ -17,9 +17,9 @@ CUDA_VISIBLE_DEVICES=$GPUS python -W ignore train.py \
                     --dim_encoder_c 128 \
                     --chunk_size_z_e 0 \
                     --coef_wip 0.02 \
-                    --num_test_sample 15 \
                     --index_target $INDEX_TARGET \
+                    --path_imgnet_valid './imgnet/valid_subset_birds10' \
                     --num_epoch $NUM_EPOCH \
-                    --path_log 'runs' \
                     --task_name $(echo ${0##*/} | sed 's:.sh::' | sed 's:train.::') \
                     --detail 'wip' 
+

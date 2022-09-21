@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
 from .encoders import EncoderF
-from .biggan import Generator
+from .biggan import Generator, Discriminator
 
 
 class VGG16Perceptual(nn.Module):
@@ -121,3 +121,21 @@ class Colorizer(nn.Module):
     output = self.G.forward_from(z_g, c_embd, self.id_mid_layer, f)
 
     return output
+
+
+class HintDiscriminator(nn.Module):
+
+  def __init__(
+      self,
+      config,
+  ):
+    super().__init__()
+    self.biggan_d = Discriminator(**config)
+    self.cnn = nn.Sequential(nn.Conv2d(6, 3, kernel_size=3, padding=1), nn.Tanh())
+
+  def forward(self, x, c, hint):
+    x_input = torch.cat([x, hint], dim=-3)
+    x_rgb = self.cnn(x_input)
+    # print('hint', hint.shape)
+    # print('x_rgb', x_rgb.shape)
+    return self.biggan_d(x_rgb, c)

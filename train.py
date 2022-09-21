@@ -180,7 +180,8 @@ def train(
       init_w=args.weight_init,
   )
   EG.train()
-  D = models.Discriminator(**config)
+  # D = models.Discriminator(**config)
+  D = models.HintDiscriminator(config)
   D.train()
   if not args.no_pretrained_d:
     D.load_state_dict(torch.load(args.path_ckpt_d, map_location='cpu'),
@@ -287,7 +288,8 @@ def train(
                            c=c_real,
                            real=x_real,
                            fake=fake.detach(),
-                           loss_dict=loss_dict)
+                           loss_dict=loss_dict,
+                           hint=x_hint)
       scaler.scale(loss_d).backward()
       scaler.step(optimizer_d)
       scaler.update()
@@ -302,6 +304,7 @@ def train(
                          args=args,
                          fake=fake,
                          loss_dict=loss_dict,
+                         hint=x_hint,
                          dev=dev)
 
       scaler.scale(loss).backward()
